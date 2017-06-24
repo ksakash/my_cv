@@ -229,8 +229,11 @@ int main(int argc, char *argv[])
       rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
       circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
 
-      int x_cord = heart_center.x - 320;
-      int y_cord = 240 - heart_center.y;
+      int x_cord_heart = heart_center.x - 320;
+      int y_cord_heart = 240 - heart_center.y;
+
+      int x_cord = center.x - 320;
+      int y_cord = 240 - center.y;
         
 
       cv::imshow("GateDetection:Contours", Drawing);
