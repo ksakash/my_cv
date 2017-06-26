@@ -5,14 +5,13 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Int8.h"
 #include <fstream>
-#include <dynamic_reconfigure/server.h>
-#include <task_marker/markerConfig.h>
 #include <vector>
 #include <std_msgs/Bool.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <dynamic_reconfigure/server.h>
+#include <task_marker/markerConfig.h>
 #include <opencv2/opencv.hpp>
-#include "std_msgs/Float32MultiArray.h"
 #include <opencv/highgui.h>
 #include <image_transport/image_transport.h>
 #include "std_msgs/Float64MultiArray.h"
@@ -20,17 +19,15 @@
 #include <sstream>
 #include <string>
 
+int w = -2, x = -2, y = -2, z = -2;
 bool IP = true;
 bool flag = false;
 bool video = false;
-int t1min, t1max, t2min, t2max, t3min, t3max;  // Default Params
+int t1min, t1max, t2min, t2max, t3min, t3max;
 
 cv::Mat frame;
 cv::Mat newframe;
-cv::Mat dst_array;
-cv::Mat dst;
-
-int count = 0, count_avg = 0, x = -1;
+int count = 0, count_avg = 0, p = -1;
 
 void callback(task_marker::markerConfig &config, uint32_t level)
 {
@@ -40,17 +37,17 @@ void callback(task_marker::markerConfig &config, uint32_t level)
   t2max = config.t2max_param;
   t3min = config.t3min_param;
   t3max = config.t3max_param;
-  ROS_INFO("Marker_Reconfigure Request:New params : %d %d %d %d %d %d", t1min, t1max, t2min, t2max, t3min, t3max);
+  ROS_INFO("Marker_Reconfigure Request : New parameters : %d %d %d %d %d %d ", t1min, t1max, t2min, t2max, t3min, t3max);
 }
 
-void markerDetectedListener(std_msgs::Bool msg)
+void markerListener(std_msgs::Bool msg)
 {
   IP = msg.data;
 }
 
 void imageCallback(const sensor_msgs::ImageConstPtr &msg)
 {
-  if (x == 32)
+  if (p == 32)
     return;
   try
   {
@@ -62,7 +59,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr &msg)
   }
   catch (cv_bridge::Exception &e)
   {
-    ROS_ERROR("%s: Could not convert from '%s' to 'bgr8'.", ros::this_node::getName().c_str(), msg->encoding.c_str());
+    ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
   }
 }
 
@@ -72,7 +69,7 @@ void SimplestCB(cv::Mat& in, cv::Mat& out, float percent)
     assert(percent > 0 && percent < 100);
     float half_percent = percent / 200.0f;
     std::vector<cv::Mat> tmpsplit; split(in, tmpsplit);
-    for ( int i = 0; i < 3; i++ )
+    for (int i = 0; i < 3; i++)
     {
         // find the low and high precentile values (based on the input percentile)
         cv::Mat flat;
@@ -90,14 +87,15 @@ void SimplestCB(cv::Mat& in, cv::Mat& out, float percent)
     cout << "inside simplestcb : no problem here" << endl;
 }
 
+
 int main(int argc, char *argv[])
 {
   int height, width, step, channels;  // parameters of the image we are working on
-
+  
   ros::init(argc, argv, "marker_detection");
   ros::NodeHandle n;
   ros::Publisher pub = n.advertise<std_msgs::Float64MultiArray>("/varun/ip/marker", 1000);
-  ros::Subscriber sub = n.subscribe<std_msgs::Bool>("marker_detection_switch", 1000, &lineDetectedListener);
+  ros::Subscriber sub = n.subscribe<std_msgs::Bool>("marker_detection_switch", 1000, &markerListener);
   ros::Rate loop_rate(10);
 
   image_transport::ImageTransport it(n);
@@ -108,24 +106,24 @@ int main(int argc, char *argv[])
   f = boost::bind(&callback, _1, _2);
   server.setCallback(f);
 
-  cvNamedWindow("MarkerDetection:circle", CV_WINDOW_NORMAL);
   cvNamedWindow("MarkerDetection:AfterColorFiltering", CV_WINDOW_NORMAL);
-  cvNamedWindow("MarkerDetection:AfterEqualizeHistogram",CV_WINDOW_NORMAL);
-  cvNamedWindow("MarkerDetection:AfterSimplestCB",CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:Contours", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterSimplestCB", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterMorphology",CV_WINDOW_NORMAL);
+
   // capture size -
   CvSize size = cvSize(width, height);
-  std::vector<cv::Point2f> center_ideal(5);
 
+  // Initialize different images that are going to be used in the program
   cv::Mat hsv_frame, thresholded, thresholded1, thresholded2, thresholded3, filtered;  // image converted to HSV plane
-  float r[5];
-
-  for (int m = 0; m++; m < 5)
-    r[m] = 0;
+  // asking for the minimum distance where bwe fire torpedo
 
   while (ros::ok())
   {
     std_msgs::Float64MultiArray array;
     loop_rate.sleep();
+    // Get one frame
     if (frame.empty())
     {
       ROS_INFO("%s: empty frame", ros::this_node::getName().c_str());
@@ -139,35 +137,36 @@ int main(int argc, char *argv[])
     step = frame.step;
 
     SimplestCB(frame, dst, 1);
-    cv::imshow("MarkerDetection:AfterColorFiltering",dst);
+    cv::imshow("MarkerDetection:AfterSimplestCB",dst);
 
     cv::Mat frame_array[3];
 
     cv::split(dst, frame_array);
 
-    cv::equalizeHist(frame_array[0], frame_array[0]);
-    cv::equalizeHist(frame_array[1], frame_array[1]);
-    cv::equalizeHist(frame_array[2], frame_array[2]);
+    equalizeHist(frame_array[0], frame_array[0]);
+    equalizeHist(frame_array[1], frame_array[1]);
+    equalizeHist(frame_array[2], frame_array[2]);
 
     cv::merge(frame_array, 3, dst_array);
-    cv::imshow("MarkerDetection:AfterEqualizeHistogram", dst_array);
-
+    cv::imshow("MarkerDetection:AfterHistogramEqualization",dst_array);
 
     // Covert color space to HSV as it is much easier to filter colors in the HSV color-space.
-    cv::cvtColor(dst_array, hsv_frame, CV_BGR2HSV);
+    cv::cvtColor(frame, hsv_frame, CV_BGR2HSV);
     cv::Scalar hsv_min = cv::Scalar(t1min, t2min, t3min, 0);
     cv::Scalar hsv_max = cv::Scalar(t1max, t2max, t3max, 0);
+    
     // Filter out colors which are out of range.
     cv::inRange(hsv_frame, hsv_min, hsv_max, thresholded);
 
-     //morphological opening (remove small objects from the foreground)
-    cv::erode(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
-    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
+    //morphological opening (remove small objects from the foreground)
+    erode(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+    dilate(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
 
     //morphological closing (fill small holes in the foreground)
-    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
-    cv::erode(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
-
+    dilate(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+    erode(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+    cv::imshow("MarkerDetection:AfterMorphology",thresholded);
+    
     cv::GaussianBlur(thresholded, thresholded, cv::Size(9, 9), 0, 0, 0);
     cv::imshow("MarkerDetection:AfterColorFiltering", thresholded);  // The stream after color filtering
 
@@ -179,44 +178,15 @@ int main(int argc, char *argv[])
       // find contours
       std::vector<std::vector<cv::Point> > contours;
       cv::Mat thresholded_Mat = thresholded;
-      findContours(thresholded_Mat, contours, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);  // Find the contours
+      findContours(thresholded_Mat, contours, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);  // Find the contours in the image
       double largest_area = 0, largest_contour_index = 0;
+
       if (contours.empty())
       {
-        int x_cord = 320 - center_ideal[0].x;
-        int y_cord = -240 + center_ideal[0].y;
-        if (x_cord < -270)
-        {
-          array.data.push_back(-2);  // top
-          array.data.push_back(-2);
-          array.data.push_back(-2);
-          array.data.push_back(-2);
-          pub.publish(array);
-        }
-        else if (x_cord > 270)
-        {
-          array.data.push_back(-1);  // left_side
-          array.data.push_back(-1);
-          array.data.push_back(-1);
-          array.data.push_back(-1);
-          pub.publish(array);
-        }
-        else if (y_cord > 200)
-        {
-          array.data.push_back(-3);  // bottom
-          array.data.push_back(-3);
-          array.data.push_back(-3);
-          array.data.push_back(-3);
-          pub.publish(array);
-        }
-        else if (y_cord < -200)
-        {
-          array.data.push_back(-4);  // right_side
-          array.data.push_back(-4);
-          array.data.push_back(-4);
-          array.data.push_back(-4);
-          pub.publish(array);
-        }
+        array.data.push_back(0);
+        array.data.push_back(0);
+
+        pub.publish(array);
         ros::spinOnce();
         // If ESC key pressed, Key=0x10001B under OpenCV 0.9.7(linux version),
         // remove higher bits using AND operator
@@ -224,6 +194,7 @@ int main(int argc, char *argv[])
           break;
         continue;
       }
+
       for (int i = 0; i < contours.size(); i++)  // iterate through each contour.
       {
         double a = contourArea(contours[i], false);  //  Find the area of contour
@@ -237,109 +208,79 @@ int main(int argc, char *argv[])
       std::vector<std::vector<cv::Point> > hull(contours.size());
       convexHull(cv::Mat(contours[largest_contour_index]), hull[largest_contour_index], false);
 
-      std::vector<cv::Point2f> center(1);
-      std::vector<float> radius(1);
-      cv::minEnclosingCircle(contours[largest_contour_index], center[0], radius[0]);
-      cv::Point2f pt;
-      pt.x = 320;  // size of my screen
-      pt.y = 240;
+      cv::Mat Drawing(thresholded_Mat.rows, thresholded_Mat.cols, CV_8UC1, cv::Scalar::all(0));
+      std::vector<cv::Vec4i> hierarchy;
+      cv::Scalar color(255, 255, 255);
 
-      float r_avg = (r[0] + r[1] + r[2] + r[3] + r[4]) / 5;
-      if ((radius[0] < (r_avg + 10)) && (count_avg >= 5))
+      std::vector<cv::Rect> boundRect(1);
+
+      boundRect[0] = boundingRect(cv::Mat(contours[largest_contour_index]));
+
+      rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
+
+      cv::Point center;
+      center.x = ((boundRect[0].br()).x + (boundRect[0].tl()).x) / 2;
+      center.y = ((boundRect[0].tl()).y + (boundRect[0].br()).y) / 2;
+      int side_x = (boundRect[0].br()).x - (boundRect[0].tl()).x;
+      int side_y = -((boundRect[0].tl()).y - (boundRect[0].br()).y);
+      drawContours(Drawing, contours, largest_contour_index, color, 2, 8, hierarchy);
+
+      cv::Mat frame_mat = frame;
+      cv::Point2f screen_center;
+      screen_center.x = 320;  // size of my screen
+      screen_center.y = 240;
+
+      circle(frame_mat, center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
+      rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
+      circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
+
+      cv::imshow("MarkerDetection:Contours", Drawing);
+
+      w = (boundRect[0].br()).x;
+      x = (boundRect[0].br()).y;
+      y = (boundRect[0].tl()).y;
+      z = (boundRect[0].tl()).x;
+      if ((side_y < 70) && (z == 1))
       {
-        r[4] = r[3];
-        r[3] = r[2];
-        r[2] = r[1];
-        r[1] = r[0];
-        r[0] = radius[0];
-        center_ideal[4] = center_ideal[3];
-        center_ideal[3] = center_ideal[2];
-        center_ideal[2] = center_ideal[1];
-        center_ideal[1] = center_ideal[0];
-        center_ideal[0] = center[0];
-        count_avg++;
+        array.data.push_back(-2);
+        array.data.push_back(-2);  //  hits left
       }
-      else if (count_avg <= 5)
+      else if ((side_y < 70) && (x == frame.cols - 1))
       {
-        r[count_avg] = radius[0];
-        center_ideal[count_avg] = center[0];
-        count_avg++;
+        array.data.push_back(-4);
+        array.data.push_back(-4);  //  hits left
+      }
+      else if (w == (frame.rows) - 1 || x == (frame.cols) - 1 || y == 1 || z == 1)
+      {
+        if (y == 1)
+        {
+          array.data.push_back(-1);
+          array.data.push_back(-1);  //  hits top
+        }
+        else if (w == frame.rows - 1)
+        {
+          array.data.push_back(-3);
+          array.data.push_back(-3);  //  hits bottom
+        }
+        else if (z == 1)
+        {
+          array.data.push_back(-2);
+          array.data.push_back(-2);  //  hits left
+        }
+        else if (x == frame.cols - 1)
+        {
+          array.data.push_back(-4);
+          array.data.push_back(-4);  //  hits right
+        }
       }
       else
       {
-        count_avg = 0;
+        array.data.push_back((frame.cols / 2.0 - center.x));
+        array.data.push_back(-(frame.rows / 2.0 - center.y));
       }
-
-      cv::Mat circles = frame;
-      circle(circles, center_ideal[0], r[0], cv::Scalar(0, 250, 0), 1, 8, 0);  // minenclosing circle
-      circle(circles, center_ideal[0], 4, cv::Scalar(0, 250, 0), -1, 8, 0);    // center is made on the screen
-      circle(circles, pt, 4, cv::Scalar(150, 150, 150), -1, 8, 0);             // center of screen
-
-      int net_x_cord = 320 - center_ideal[0].x + r[0];
-      int net_y_cord = -240 + center_ideal[0].y + r[0];
-      if (net_x_cord < -310)
-      {
-        array.data.push_back(-2);  // top
-        array.data.push_back(-2);
-        array.data.push_back(-2);
-        array.data.push_back(-2);
-        pub.publish(array);
-      }
-      else if (net_x_cord > 310)
-      {
-        array.data.push_back(-1);  // left_side
-        array.data.push_back(-1);
-        array.data.push_back(-1);
-        array.data.push_back(-1);
-        pub.publish(array);
-        ros::spinOnce();
-      }
-      else if (net_y_cord > 230)
-      {
-        array.data.push_back(-3);  // bottom
-        array.data.push_back(-3);
-        array.data.push_back(-3);
-        array.data.push_back(-3);
-        pub.publish(array);
-      }
-      else if (net_y_cord < -230)
-      {
-        array.data.push_back(-4);  // right_side
-        array.data.push_back(-4);
-        array.data.push_back(-4);
-        array.data.push_back(-4);
-        pub.publish(array);
-      }
-      else if (r[0] > 110)
-      {
-        array.data.push_back(-5);
-        array.data.push_back(-5);
-        array.data.push_back(-5);
-        array.data.push_back(-5);
-        pub.publish(array);
-      }
-      else
-      {
-        float distance;
-        distance = pow(radius[0] / 7526.5, -.92678);  // function found using experiment
-        array.data.push_back(r[0]);                   // publish radius
-        array.data.push_back((320 - center_ideal[0].x));
-        array.data.push_back(-(240 - center_ideal[0].y));
-        array.data.push_back(distance);
-        pub.publish(array);
-      }
-      cv::imshow("MarkerDetection:circle", circles);  // Original stream with detected ball overlay
-
-      if ((cvWaitKey(10) & 255) == 32)
-      {
-        if (x == 32)
-          x = -1;
-        else
-          x = 32;
-      }
-      if (x == 32)
-        ROS_INFO("%s: PAUSED\n", ros::this_node::getName().c_str());
+      pub.publish(array);
       ros::spinOnce();
+
       // If ESC key pressed, Key=0x10001B under OpenCV 0.9.7(linux version),
       // remove higher bits using AND operator
       if ((cvWaitKey(10) & 255) == 27)
@@ -347,14 +288,15 @@ int main(int argc, char *argv[])
     }
     else
     {
+      ROS_INFO("%s: empty frame", ros::this_node::getName().c_str());
       if ((cvWaitKey(10) & 255) == 32)
       {
-        if (x == 32)
-          x = -1;
+        if (p == 32)
+          p = -1;
         else
-          x = 32;
+          p = 32;
       }
-      if (x == 32)
+      if (p == 32)
         ROS_INFO("%s: PAUSED\n", ros::this_node::getName().c_str());
       ros::spinOnce();
     }
