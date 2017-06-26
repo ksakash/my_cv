@@ -261,8 +261,8 @@ int main(int argc, char *argv[])
       }
       else
       {
-        array.data.push_back(x_cord); // x and y coordinate of the center of the heart
-        array.data.push_back(y_cord);
+        array.data.push_back(x_cord_heart); // x and y coordinate of the center of the heart
+        array.data.push_back(y_cord_heart);
       }
 
       pub.publish(array);
