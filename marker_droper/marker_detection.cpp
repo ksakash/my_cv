@@ -10,7 +10,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <dynamic_reconfigure/server.h>
-#include <task_gate/gateConfig.h>
+#include <task_marker/markerConfig.h>
 #include <opencv2/opencv.hpp>
 #include <opencv/highgui.h>
 #include <image_transport/image_transport.h>
@@ -29,7 +29,7 @@ cv::Mat frame;
 cv::Mat newframe;
 int count = 0, count_avg = 0, p = -1;
 
-void callback(task_gate::gateConfig &config, uint32_t level)
+void callback(task_marker::markerConfig &config, uint32_t level)
 {
   t1min = config.t1min_param;
   t1max = config.t1max_param;
@@ -37,10 +37,10 @@ void callback(task_gate::gateConfig &config, uint32_t level)
   t2max = config.t2max_param;
   t3min = config.t3min_param;
   t3max = config.t3max_param;
-  ROS_INFO("Gate_Reconfigure Request : New parameters : %d %d %d %d %d %d ", t1min, t1max, t2min, t2max, t3min, t3max);
+  ROS_INFO("Marker_Reconfigure Request : New parameters : %d %d %d %d %d %d ", t1min, t1max, t2min, t2max, t3min, t3max);
 }
 
-void markerDroperListener(std_msgs::Bool msg)
+void markerListener(std_msgs::Bool msg)
 {
   IP = msg.data;
 }
@@ -92,25 +92,25 @@ int main(int argc, char *argv[])
 {
   int height, width, step, channels;  // parameters of the image we are working on
   
-  ros::init(argc, argv, "gate_detection");
+  ros::init(argc, argv, "marker_detection");
   ros::NodeHandle n;
-  ros::Publisher pub = n.advertise<std_msgs::Float64MultiArray>("/varun/ip/gate", 1000);
-  ros::Subscriber sub = n.subscribe<std_msgs::Bool>("gate_detection_switch", 1000, &gateListener);
+  ros::Publisher pub = n.advertise<std_msgs::Float64MultiArray>("/varun/ip/marker", 1000);
+  ros::Subscriber sub = n.subscribe<std_msgs::Bool>("marker_detection_switch", 1000, &markerListener);
   ros::Rate loop_rate(10);
 
   image_transport::ImageTransport it(n);
   image_transport::Subscriber sub1 = it.subscribe("/varun/sensors/front_camera/image_raw", 1, imageCallback);
 
-  dynamic_reconfigure::Server<task_gate::gateConfig> server;
-  dynamic_reconfigure::Server<task_gate::gateConfig>::CallbackType f;
+  dynamic_reconfigure::Server<task_marker::markerConfig> server;
+  dynamic_reconfigure::Server<task_marker::markerConfig>::CallbackType f;
   f = boost::bind(&callback, _1, _2);
   server.setCallback(f);
 
-  cvNamedWindow("MarkerDroperDetection:AfterColorFiltering", CV_WINDOW_NORMAL);
-  cvNamedWindow("MarkerDroperDetection:Contours", CV_WINDOW_NORMAL);
-  cvNamedWindow("MarkerDroperDetection:AfterSimplestCB", CV_WINDOW_NORMAL);
-  cvNamedWindow("MarkerDroperDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
-  cvNamedWindow("MarkerDroperDetection:AfterMorphology",CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterColorFiltering", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:Contours", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterSimplestCB", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
+  cvNamedWindow("MarkerDetection:AfterMorphology",CV_WINDOW_NORMAL);
 
   // capture size -
   CvSize size = cvSize(width, height);
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
     step = frame.step;
 
     SimplestCB(frame, dst, 1);
-    cv::imshow("MarkerDroperDetection:AfterSimplestCB",dst);
+    cv::imshow("MarkerDetection:AfterSimplestCB",dst);
 
     cv::Mat frame_array[3];
 
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
     equalizeHist(frame_array[2], frame_array[2]);
 
     cv::merge(frame_array, 3, dst_array);
-    cv::imshow("MarkerDroperDetection:AfterHistogramEqualization",dst_array);
+    cv::imshow("MarkerDetection:AfterHistogramEqualization",dst_array);
 
     // Covert color space to HSV as it is much easier to filter colors in the HSV color-space.
     cv::cvtColor(frame, hsv_frame, CV_BGR2HSV);
@@ -165,10 +165,10 @@ int main(int argc, char *argv[])
     //morphological closing (fill small holes in the foreground)
     dilate(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
     erode(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-    cv::imshow("MarkerDroperDetection:AfterMorphology",thresholded);
+    cv::imshow("MarkerDetection:AfterMorphology",thresholded);
     
     cv::GaussianBlur(thresholded, thresholded, cv::Size(9, 9), 0, 0, 0);
-    cv::imshow("MarkerDroperDetection:AfterColorFiltering", thresholded);  // The stream after color filtering
+    cv::imshow("MarkerDetection:AfterColorFiltering", thresholded);  // The stream after color filtering
 
     if ((cvWaitKey(10) & 255) == 27)
       break;
@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
       rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
       circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
 
-      cv::imshow("MarkerDroperDetection:Contours", Drawing);
+      cv::imshow("MarkerDetection:Contours", Drawing);
 
       w = (boundRect[0].br()).x;
       x = (boundRect[0].br()).y;
