@@ -19,6 +19,9 @@
 #include <sstream>
 #include <string>
 
+using namespace cv;
+
+
 int w = -2, x = -2, y = -2, z = -2; // to change
 bool IP = true; // indication for running the node or not
 bool flag = false;
@@ -27,9 +30,12 @@ int t1min, t1max, t2min, t2max, t3min, t3max; // values used for thresholding ac
 
 cv::Mat frame; // takes the original image
 cv::Mat newframe; // takes the original image from the topic
+cv::Mat dst;
+cv::Mat dst_array;
+
 int count = 0, count_avg = 0, p = -1;
 
-void callback(task_gate::gateConfig &config, uint32_t level) // called when the parameters are changed
+void callback(task_torpedo::torpedoConfig &config, uint32_t level) // called when the parameters are changed
 {
   t1min = config.t1min_param;
   t1max = config.t1max_param;
@@ -37,7 +43,7 @@ void callback(task_gate::gateConfig &config, uint32_t level) // called when the 
   t2max = config.t2max_param;
   t3min = config.t3min_param;
   t3max = config.t3max_param;
-  ROS_INFO("Gate_Reconfigure Request : New parameters : %d %d %d %d %d %d ", t1min, t1max, t2min, t2max, t3min, t3max);
+  ROS_INFO("Torpedo_Reconfigure Request : New parameters : %d %d %d %d %d %d ", t1min, t1max, t2min, t2max, t3min, t3max);
 }
 
 void torpedoListener(std_msgs::Bool msg)
@@ -63,29 +69,52 @@ void imageCallback(const sensor_msgs::ImageConstPtr &msg) // called everytime wh
   }
 }
 
+void SimplestCB(cv::Mat& in, cv::Mat& out, float percent)
+{
+    assert(in.channels() == 3);
+    assert(percent > 0 && percent < 100);
+    float half_percent = percent / 200.0f;
+    std::vector<cv::Mat> tmpsplit; split(in, tmpsplit);
+    for ( int i = 0; i < 3; i++ )
+    {
+        // find the low and high precentile values (based on the input percentile)
+        cv::Mat flat;
+        tmpsplit[i].reshape(1, 1).copyTo(flat);
+        cv::sort(flat, flat, CV_SORT_EVERY_ROW + CV_SORT_ASCENDING);
+        int lowval = flat.at<uchar>(cvFloor((static_cast<float>(flat.cols)) * half_percent));
+        int highval = flat.at<uchar>(cvCeil((static_cast<float>(flat.cols)) * (1.0 - half_percent)));
+        // saturate below the low percentile and above the high percentile
+        tmpsplit[i].setTo(lowval, tmpsplit[i] < lowval);
+        tmpsplit[i].setTo(highval, tmpsplit[i] > highval);
+        // scale the channel
+        cv::normalize(tmpsplit[i], tmpsplit[i], 0, 255, cv::NORM_MINMAX);
+    }
+    cv::merge(tmpsplit, out);
+}
+
 int main(int argc, char *argv[])
 {
   int height, width, step, channels;  // parameters of the image we are working on
 
-  ros::init(argc, argv, "gate_detection");
+  ros::init(argc, argv, "torpedo_detection");
   ros::NodeHandle n;
-  ros::Publisher pub = n.advertise<std_msgs::Float64MultiArray>("/varun/ip/gate", 1000);
-  ros::Subscriber sub = n.subscribe<std_msgs::Bool>("gate_detection_switch", 1000, &gateListener);
+  ros::Publisher pub = n.advertise<std_msgs::Float64MultiArray>("/varun/ip/torpedo", 1000);
+  ros::Subscriber sub = n.subscribe<std_msgs::Bool>("torpedo_detection_switch", 1000, &torpedoListener);
   ros::Rate loop_rate(10);
 
   image_transport::ImageTransport it(n);
   image_transport::Subscriber sub1 = it.subscribe("/varun/sensors/front_camera/image_raw", 1, imageCallback);
 
-  dynamic_reconfigure::Server<task_gate::gateConfig> server;
-  dynamic_reconfigure::Server<task_gate::gateConfig>::CallbackType f;
+  dynamic_reconfigure::Server<task_torpedo::torpedoConfig> server;
+  dynamic_reconfigure::Server<task_torpedo::torpedoConfig>::CallbackType f;
   f = boost::bind(&callback, _1, _2);
   server.setCallback(f);
 
-  cvNamedWindow("GateDetection:AfterColorFiltering", CV_WINDOW_NORMAL);
-  cvNamedWindow("GateDetection:Contours", CV_WINDOW_NORMAL);
-  cvNamedWindow("GateDetection:AfterSimplestCB", CV_WINDOW_NORMAL);
-  cvNamedWindow("GateDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
-  cvNamedWindow("GateDetection:AfterMorphology",CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:AfterColorFiltering", CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:Contours", CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:AfterSimplestCB", CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:AfterMorphology",CV_WINDOW_NORMAL);
 
   // capture size -
   CvSize size = cvSize(width, height);
@@ -112,7 +141,7 @@ int main(int argc, char *argv[])
     step = frame.step;
 
     SimplestCB(frame, dst, 1);
-    cv::imshow("GateDetection:AfterSimplestCB",dst);
+    cv::imshow("TorpedoDetection:AfterSimplestCB",dst);
 
     cv::Mat frame_array[3];
 
@@ -123,7 +152,7 @@ int main(int argc, char *argv[])
     equalizeHist(frame_array[2], frame_array[2]);
 
     cv::merge(frame_array, 3, dst_array);
-    cv::imshow("GateDetection:AfterHistogramEqualization",dst_array);
+    cv::imshow("TorpedoDetection:AfterHistogramEqualization",dst_array);
 
     // Covert color space to HSV as it is much easier to filter colors in the HSV color-space.
     cv::cvtColor(frame, hsv_frame, CV_BGR2HSV);
@@ -142,7 +171,7 @@ int main(int argc, char *argv[])
 
     
     cv::GaussianBlur(thresholded, thresholded, cv::Size(9, 9), 0, 0, 0);
-    cv::imshow("GateDetection:AfterColorFiltering", thresholded);  // The stream after color filtering
+    cv::imshow("TorpedoDetection:AfterColorFiltering", thresholded);  // The stream after color filtering
 
     if ((cvWaitKey(10) & 255) == 27)
       break;
@@ -154,6 +183,7 @@ int main(int argc, char *argv[])
       cv::Mat thresholded_Mat = thresholded;
       findContours(thresholded_Mat, contours, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);  // Find the contours in the image
       double largest_area = 0, largest_contour_index = 0;
+      double second_largest_area = 0, second_largest_contour_index = 0;
 
       if (contours.empty())
       {
@@ -200,7 +230,7 @@ int main(int argc, char *argv[])
       std::vector<cv::Rect> boundRect(2);
 
       boundRect[0] = boundingRect(cv::Mat(contours[largest_contour_index]));
-      boundRect[1] = boundingRect(cv::Mat(coontours[second_largest_contour_index])); // finding a min fitting rectangle around the heart shape
+      boundRect[1] = boundingRect(cv::Mat(contours[second_largest_contour_index])); // finding a min fitting rectangle around the heart shape
 
       // not shown the Drawing Mat
       rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0); // drawing a rectangle in the image
@@ -226,7 +256,9 @@ int main(int argc, char *argv[])
       screen_center.y = 240;
 
       circle(frame_mat, center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
+      circle(frame_mat, heart_center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
       rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
+      rectangle(frame_mat, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0);
       circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
 
       int x_cord_heart = heart_center.x - 320;
@@ -236,7 +268,7 @@ int main(int argc, char *argv[])
       int y_cord = 240 - center.y;
         
 
-      cv::imshow("GateDetection:Contours", Drawing);
+      cv::imshow("TorpedoDetection:Contours", Drawing);
 
       // have to make changes after here 
       if (x_cord < -270)
@@ -288,7 +320,6 @@ int main(int argc, char *argv[])
       ros::spinOnce();
     }
   }
-  output_cap.release();
   return 0;
 }
 
