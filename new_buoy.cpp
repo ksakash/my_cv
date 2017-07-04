@@ -27,7 +27,7 @@ int t1min, t1max, t2min, t2max, t3min, t3max;  // Default Params
 
 cv::Mat frame;
 cv::Mat newframe;
-cv::Mat dst_array;
+// cv::Mat dst_array;
 cv::Mat dst;
 
 int count = 0, count_avg = 0, x = -1;
@@ -181,12 +181,17 @@ int main(int argc, char *argv[])
 
   for (int m = 0; m++; m < 5)
     r[m] = 0;
+
+
+  // all the cv::Mat declared outside the loop to increase the speed
   cv::Mat lab_image;
   cv::Mat balanced_image;
-  cv::Scalar hsv_min = cv::Scalar(0, 0, 100, 0);
-  cv::Scalar hsv_max = cv::Scalar(0, 0, 257, 0);
+  cv::Scalar hsv_min = cv::Scalar(t1min, t2min, t3min, 0);
+  cv::Scalar hsv_max = cv::Scalar(t1max, t2max, t3max, 0);
   cv::Mat balanced_image1;
-    
+  cv::Mat dstx;
+  std::vector<cv::Mat> lab_planes(3);
+
   while (ros::ok())
   {
     std_msgs::Float64MultiArray array;
@@ -232,13 +237,12 @@ int main(int argc, char *argv[])
     cv::cvtColor(frame, lab_image, CV_BGR2Lab);
 
     // Extract the L channel
-    std::vector<cv::Mat> lab_planes(3);
     cv::split(lab_image, lab_planes);  // now we have the L image in lab_planes[0]
 
     // apply the CLAHE algorithm to the L channel
     cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
     clahe->setClipLimit(4);
-    cv::Mat dst;
+    
     clahe->apply(lab_planes[0], dst);
 
     // Merge the the color planes back into an Lab image
@@ -251,19 +255,17 @@ int main(int argc, char *argv[])
     
     for (int i=0; i < 7; i++)
     {
-      cv::Mat dstx;
       bilateralFilter(image_clahe, dstx, 6, 8, 8);
-
       bilateralFilter(dstx, image_clahe, 6, 8, 8);
     }
-    //balance_white(dst2);
+    // balance_white(dst2);
+    
     image_clahe.copyTo(balanced_image1);
     balance_white(balanced_image1);
+    
     for (int i=0; i < 2; i++)
     {
-      cv::Mat dstx;
       bilateralFilter(balanced_image1, dstx, 6, 8, 8);
-
       bilateralFilter(dstx, balanced_image1, 6, 8, 8);
     }
         
@@ -295,7 +297,7 @@ int main(int argc, char *argv[])
     cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
     cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)));
 
-    cv::imshow("BuoyDetection:AfterEnhancing", dst3);
+    cv::imshow("BuoyDetection:AfterEnhancing", balanced_image1);
     cv::imshow("BuoyDetection:AfterThresholding", thresholded);
 
 
@@ -506,6 +508,6 @@ int main(int argc, char *argv[])
       ros::spinOnce();
     }
   }
-  output_cap.release();
+  // output_cap.release();
   return 0;
 }
