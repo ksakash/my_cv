@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
   CvSize size = cvSize(width, height);
   std::vector<cv::Point2f> center_ideal(5);
 
-  cv::Mat hsv_frame, thresholded, filtered;  // image converted to HSV plane
+  // cv::Mat hsv_frame, thresholded, filtered;  // image converted to HSV plane
   float r[5];
 
   for (int m = 0; m++; m < 5)
@@ -184,12 +184,11 @@ int main(int argc, char *argv[])
 
 
   // all the cv::Mat declared outside the loop to increase the speed
-  cv::Mat lab_image;
-  cv::Mat balanced_image;
+  
   cv::Scalar hsv_min = cv::Scalar(t1min, t2min, t3min, 0);
   cv::Scalar hsv_max = cv::Scalar(t1max, t2max, t3max, 0);
-  cv::Mat balanced_image1;
-  cv::Mat dstx;
+  
+  cv::Mat lab_image, balanced_image1, dstx, thresholded, image_clahe, dst;
   std::vector<cv::Mat> lab_planes(3);
 
   while (ros::ok())
@@ -250,7 +249,6 @@ int main(int argc, char *argv[])
     cv::merge(lab_planes, lab_image);
 
     // convert back to RGB
-    cv::Mat image_clahe;
     cv::cvtColor(lab_image, image_clahe, CV_Lab2BGR);
     
     for (int i=0; i < 7; i++)
@@ -323,7 +321,7 @@ int main(int argc, char *argv[])
     if ((cvWaitKey(10) & 255) == 27)
       break;
 
-    if (1)
+    if (!IP)
     {
       // find contours
       std::vector<std::vector<cv::Point> > contours;
@@ -383,8 +381,8 @@ int main(int argc, char *argv[])
         }
       }
       // Convex HULL
-      std::vector<std::vector<cv::Point> > hull(contours.size());
-      convexHull(cv::Mat(contours[largest_contour_index]), hull[largest_contour_index], false);
+      // std::vector<std::vector<cv::Point> > hull(contours.size());
+      // convexHull(cv::Mat(contours[largest_contour_index]), hull[largest_contour_index], false);
 
       std::vector<cv::Point2f> center(1);
       std::vector<float> radius(1);
