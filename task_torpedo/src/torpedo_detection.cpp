@@ -69,27 +69,51 @@ void imageCallback(const sensor_msgs::ImageConstPtr &msg) // called everytime wh
   }
 }
 
-void SimplestCB(cv::Mat& in, cv::Mat& out, float percent)
-{
-    assert(in.channels() == 3);
-    assert(percent > 0 && percent < 100);
-    float half_percent = percent / 200.0f;
-    std::vector<cv::Mat> tmpsplit; split(in, tmpsplit);
-    for ( int i = 0; i < 3; i++ )
-    {
-        // find the low and high precentile values (based on the input percentile)
-        cv::Mat flat;
-        tmpsplit[i].reshape(1, 1).copyTo(flat);
-        cv::sort(flat, flat, CV_SORT_EVERY_ROW + CV_SORT_ASCENDING);
-        int lowval = flat.at<uchar>(cvFloor((static_cast<float>(flat.cols)) * half_percent));
-        int highval = flat.at<uchar>(cvCeil((static_cast<float>(flat.cols)) * (1.0 - half_percent)));
-        // saturate below the low percentile and above the high percentile
-        tmpsplit[i].setTo(lowval, tmpsplit[i] < lowval);
-        tmpsplit[i].setTo(highval, tmpsplit[i] > highval);
-        // scale the channel
-        cv::normalize(tmpsplit[i], tmpsplit[i], 0, 255, cv::NORM_MINMAX);
+void balance_white(cv::Mat mat) {
+  double discard_ratio = 0.05;
+  int hists[3][256];
+  memset(hists, 0, 3*256*sizeof(int));
+
+  for (int y = 0; y < mat.rows; ++y) {
+    uchar* ptr = mat.ptr<uchar>(y);
+    for (int x = 0; x < mat.cols; ++x) {
+      for (int j = 0; j < 3; ++j) {
+        hists[j][ptr[x * 3 + j]] += 1;
+      }
     }
-    cv::merge(tmpsplit, out);
+  }
+
+  // cumulative hist
+  int total = mat.cols*mat.rows;
+  int vmin[3], vmax[3];
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 255; ++j) {
+      hists[i][j + 1] += hists[i][j];
+    }
+    vmin[i] = 0;
+    vmax[i] = 255;
+    while (hists[i][vmin[i]] < discard_ratio * total)
+      vmin[i] += 1;
+    while (hists[i][vmax[i]] > (1 - discard_ratio) * total)
+      vmax[i] -= 1;
+    if (vmax[i] < 255 - 1)
+      vmax[i] += 1;
+  }
+
+
+  for (int y = 0; y < mat.rows; ++y) {
+    uchar* ptr = mat.ptr<uchar>(y);
+    for (int x = 0; x < mat.cols; ++x) {
+      for (int j = 0; j < 3; ++j) {
+        int val = ptr[x * 3 + j];
+        if (val < vmin[j])
+          val = vmin[j];
+        if (val > vmax[j])
+          val = vmax[j];
+        ptr[x * 3 + j] = static_cast<uchar>((val - vmin[j]) * 255.0 / (vmax[j] - vmin[j]));
+      }
+    }
+  }
 }
 
 int main(int argc, char *argv[])
@@ -110,17 +134,25 @@ int main(int argc, char *argv[])
   f = boost::bind(&callback, _1, _2);
   server.setCallback(f);
 
-  cvNamedWindow("TorpedoDetection:AfterColorFiltering", CV_WINDOW_NORMAL);
-  cvNamedWindow("TorpedoDetection:Contours", CV_WINDOW_NORMAL);
-  cvNamedWindow("TorpedoDetection:AfterSimplestCB", CV_WINDOW_NORMAL);
-  cvNamedWindow("TorpedoDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
-  cvNamedWindow("TorpedoDetection:AfterMorphology",CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:Original", CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:AfterEnhancing", CV_WINDOW_NORMAL);
+  cvNamedWindow("TorpedoDetection:AfterThresholding", CV_WINDOW_NORMAL);
+  // cvNamedWindow("TorpedoDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
+  // cvNamedWindow("TorpedoDetection:AfterMorphology",CV_WINDOW_NORMAL);
 
   // capture size -
   CvSize size = cvSize(width, height);
+  std::vector<cv::Point2f> center_ideal(5);
+  float side[5];
+
+  for(int i = 0; i < 5; i++){
+    sides[i] = 0;
+  }
 
   // Initialize different images that are going to be used in the program
-  cv::Mat hsv_frame, thresholded, thresholded1, thresholded2, thresholded3, filtered;  // image converted to HSV plane
+  cv::Mat cv::Mat lab_image, balanced_image1, dstx, thresholded, image_clahe, dst;
+  std::vector<cv::Mat> lab_planes(3);
+  // image converted to HSV plane
   // asking for the minimum distance where bwe fire torpedo
 
   while (ros::ok())
@@ -140,38 +172,51 @@ int main(int argc, char *argv[])
     width = frame.cols;
     step = frame.step;
 
-    SimplestCB(frame, dst, 1);
-    cv::imshow("TorpedoDetection:AfterSimplestCB",dst);
+    cv::cvtColor(frame, lab_image, CV_BGR2Lab);
 
-    cv::Mat frame_array[3];
+    // Extract the L channel
+    cv::split(lab_image, lab_planes);  // now we have the L image in lab_planes[0]
 
-    cv::split(dst, frame_array);
-
-    equalizeHist(frame_array[0], frame_array[0]);
-    equalizeHist(frame_array[1], frame_array[1]);
-    equalizeHist(frame_array[2], frame_array[2]);
-
-    cv::merge(frame_array, 3, dst_array);
-    cv::imshow("TorpedoDetection:AfterHistogramEqualization",dst_array);
-
-    // Covert color space to HSV as it is much easier to filter colors in the HSV color-space.
-    cv::cvtColor(frame, hsv_frame, CV_BGR2HSV);
-    cv::Scalar hsv_min = cv::Scalar(t1min, t2min, t3min, 0);
-    cv::Scalar hsv_max = cv::Scalar(t1max, t2max, t3max, 0);
-    // Filter out colors which are out of range.
-    cv::inRange(hsv_frame, hsv_min, hsv_max, thresholded);
-
-    //morphological opening (remove small objects from the foreground)
-    erode(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-    dilate(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-
-    //morphological closing (fill small holes in the foreground)
-    dilate(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-    erode(thresholded, thresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-
+    // apply the CLAHE algorithm to the L channel
+    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
+    clahe->setClipLimit(4);
     
-    cv::GaussianBlur(thresholded, thresholded, cv::Size(9, 9), 0, 0, 0);
-    cv::imshow("TorpedoDetection:AfterColorFiltering", thresholded);  // The stream after color filtering
+    clahe->apply(lab_planes[0], dst);
+
+    // Merge the the color planes back into an Lab image
+    dst.copyTo(lab_planes[0]);
+    cv::merge(lab_planes, lab_image);
+
+    // convert back to RGB
+    cv::Mat image_clahe;
+    cv::cvtColor(lab_image, image_clahe, CV_Lab2BGR);
+    
+    for (int i=0; i < 7; i++)
+    {
+      bilateralFilter(image_clahe, dstx, 6, 8, 8);
+      bilateralFilter(dstx, image_clahe, 6, 8, 8);
+    }
+    // balance_white(dst2);
+    
+    image_clahe.copyTo(balanced_image1);
+    balance_white(balanced_image1);
+    
+    for (int i=0; i < 2; i++)
+    {
+      bilateralFilter(balanced_image1, dstx, 6, 8, 8);
+      bilateralFilter(dstx, balanced_image1, 6, 8, 8);
+    }
+        
+    // Filter out colors which are out of range.
+
+    cv::inRange(balanced_image1, hsv_min, hsv_max, thresholded);
+   
+    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
+    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
+    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)));
+
+    cv::imshow("TorpedoDetection:AfterEnhancing", balanced_image1);
+    cv::imshow("TorpedoDetection:AfterThresholding", thresholded);
 
     if ((cvWaitKey(10) & 255) == 27)
       break;
@@ -187,11 +232,40 @@ int main(int argc, char *argv[])
 
       if (contours.empty())
       {
-        array.data.push_back(0);
-        array.data.push_back(0);
-
-        pub.publish(array);
-        ros::spinOnce();
+        int x_cord = 320 - center_ideal[0].x;
+        int y_cord = -240 + center_ideal[0].y;
+        if (x_cord < -270)
+        {
+          array.data.push_back(-2);  // top
+          array.data.push_back(-2);
+          array.data.push_back(-2);
+          array.data.push_back(-2);
+          pub.publish(array);
+        }
+        else if (x_cord > 270)
+        {
+          array.data.push_back(-1);  // left_side
+          array.data.push_back(-1);
+          array.data.push_back(-1);
+          array.data.push_back(-1);
+          pub.publish(array);
+        }
+        else if (y_cord > 200)
+        {
+          array.data.push_back(-3);  // bottom
+          array.data.push_back(-3);
+          array.data.push_back(-3);
+          array.data.push_back(-3);
+          pub.publish(array);
+        }
+        else if (y_cord < -200)
+        {
+          array.data.push_back(-4);  // right_side
+          array.data.push_back(-4);
+          array.data.push_back(-4);
+          array.data.push_back(-4);
+          pub.publish(array);
+        }
         // If ESC key pressed, Key=0x10001B under OpenCV 0.9.7(linux version),
         // remove higher bits using AND operator
         if ((cvWaitKey(10) & 255) == 27)
@@ -208,6 +282,8 @@ int main(int argc, char *argv[])
           largest_contour_index = i;  // Store the index of largest contour
         }
       }
+
+      second_largest_contour_index = largest_contour_index;
 
       for (int i = contours.size()-1; i >= 0; i--)
       {
@@ -227,27 +303,47 @@ int main(int argc, char *argv[])
       std::vector<cv::Vec4i> hierarchy;
       cv::Scalar color(255, 255, 255);
 
-      std::vector<cv::Rect> boundRect(2);
+      std::vector<cv::RotatedRect> boundRect(2);
+      Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+      
 
-      boundRect[0] = boundingRect(cv::Mat(contours[largest_contour_index]));
-      boundRect[1] = boundingRect(cv::Mat(contours[second_largest_contour_index])); // finding a min fitting rectangle around the heart shape
+      boundRect[0] = MinAreaRect(cv::Mat(contours[largest_contour_index]));
+      boundRect[1] = MinAreaRect(cv::Mat(contours[second_largest_contour_index])); // finding a min fitting rectangle around the heart shape
 
+      Point2f rect_points0[4];
+      Point2f rect_points1[4];
+
+      boundRect[0].points(rect_points0); // get the points of the two rectangles formed
+      boundRect[1].points(rect_points1);
+
+      
       // not shown the Drawing Mat
-      rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0); // drawing a rectangle in the image
-      rectangle(Drawing, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0); // drawing a rectangle in the image 
+      // rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0); // drawing a rectangle in the image
+      // rectangle(Drawing, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0); // drawing a rectangle in the image 
 
-      cv::Point center;
-      center.x = ((boundRect[0].br()).x + (boundRect[0].tl()).x) / 2;
-      center.y = ((boundRect[0].tl()).y + (boundRect[0].br()).y) / 2;
-      int side_x = (boundRect[0].br()).x - (boundRect[0].tl()).x;
-      int side_y = -((boundRect[0].tl()).y - (boundRect[0].br()).y);
+      cv::Point2f center;
+      center.x = (rect_points0[0].x + rect_points0[1].x + rect_points0[2].x + rect_points0[3].x) / 4; // center of the rectangle of the largest contour 
+      center.y = (rect_points0[0].y + rect_points0[1].y + rect_points0[2].y + rect_points0[3].y) / 4;
+
+      float sides0[4]; // length of the sides of the rectangle formed of the largest contour 
+
+      for(int i = 0; i < 4; i++){
+
+        float distance = (rect_points0[i].x - rect_points0[(i+1)%4])*(rect_points0[i].x - rect_points0[(i+1)%4]) + (rect_points0[i].y - rect_points0[(i+1)%4])*(rect_points0[i].y - rect_points0[(i+1)%4].y);
+        sides0[i] = pow(disatnce,0.5);
+
+      }
+
+
+      // int side_x = (boundRect[0].br()).x - (boundRect[0].tl()).x; // change the sides
+      // int side_y = -((boundRect[0].tl()).y - (boundRect[0].br()).y);
       drawContours(Drawing, contours, largest_contour_index, color, 2, 8, hierarchy);
 
-      cv::Point heart_center;
-      heart_center.x = ((boundRect[1].br()).x + (boundRect[1].tl()).x) / 2;
-      int heart_side_x = (boundRect[1].br()).x - (boundRect[1].tl()).x;
-      int heart_side_y = -((boundRect[1].tl()).y - (boundRect[1].br()).y);
-      heart_center.y = (boundRect[1].br()).y + side_y / 3;
+      cv::Point2f heart_center; // center of the second largest rectangle
+      heart_center.x = (rect_points1[0].x + rect_points1[1].x + rect_points1[2].x + rect_points1[3].x) / 4;
+      heart_center.y = (rect_points1[0].x + rect_points1[1].x + rect_points1[2].x + rect_points1[3].x) / 4
+      // int heart_side_x = (boundRect[1].br()).x - (boundRect[1].tl()).x; // change the sides
+      // int heart_side_y = -((boundRect[1].tl()).y - (boundRect[1].br()).y);
       drawContours(Drawing, contours, second_largest_contour_index, color, 2, 8, hierarchy);
 
       cv::Mat frame_mat = frame;
@@ -257,44 +353,116 @@ int main(int argc, char *argv[])
 
       circle(frame_mat, center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
       circle(frame_mat, heart_center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
-      rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
-      rectangle(frame_mat, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0);
+
+      for( int j = 0; j < 4; j++ ) // drawing the largest rectangle obtained 
+          line( frame_mat, rect_points0[j], rect_points0[(j+1)%4], color, 1, 8 );
+    
+      for( int j = 0; j < 4; j++ ) // drawing the second largest rectangle obtained 
+          line( frame_mat, rect_points1[j], rect_points1[(j+1)%4], color, 1, 8 );
+      
+      float sides1[4]; // contains the side of the rectangle around the torpedo
+
+      for(int i = 0; i < 4; i++){
+
+        float distance = (rect_points1[i].x - rect_points1[(i+1)%4])*(rect_points1[i].x - rect_points1[(i+1)%4]) + (rect_points1[i].y - rect_points1[(i+1)%4])*(rect_points1[i].y - rect_points1[(i+1)%4].y);
+        sides1[i] = pow(disatnce,0.5);
+
+      }
+
+      float radius[1];
+
+      radius[0] = (sides0[0] + sides0[1] + sides0[2] + sides0[3] + sides1[0] + sides1[1] + sides1[2] + sides1[3]) / 8 // average of all the sides of the rectangles to get a approx. radius to use
+    
+      // rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
+      // rectangle(frame_mat, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0);
       circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
 
-      int x_cord_heart = heart_center.x - 320;
-      int y_cord_heart = 240 - heart_center.y;
+      int x_cord_heart = -(heart_center.x - 320);
+      int y_cord_heart = -240 + heart_center.y;
 
-      int x_cord = center.x - 320;
-      int y_cord = 240 - center.y;
-        
+      int x_cord = -(center.x - 320);
+      int y_cord = -240 + center.y;
 
-      cv::imshow("TorpedoDetection:Contours", Drawing);
+      cv::Point2f center_avg;
 
-      // have to make changes after here 
-      if (x_cord < -270)
+      center_avg[0].x = (center_ideal[0].x + center_ideal[1].x + center_ideal[2].x + center_ideal[3].x + center_ideal[4].x) / 5;
+      center_avg[0].y = (center_ideal[0].y + center_ideal[1].y + center_ideal[2].y + center_ideal[3].y + center_ideal[4].y) / 5;
+      
+      float side_avg = (side[0] + side[1] + side[2] + side[3] + side[4]) / 5;
+      if ((radius[0] < (side_avg + 10)) && (count_avg >= 5))
       {
-        array.data.push_back(-2);  // top
-        array.data.push_back(-2);
+        side[4] = side[3];
+        side[3] = side[2];
+        side[2] = side[1];
+        side[1] = side[0];
+        side[0] = radius[0];
+        center_ideal[4] = center_ideal[3];
+        center_ideal[3] = center_ideal[2];
+        center_ideal[2] = center_ideal[1];
+        center_ideal[1] = center_ideal[0];
+        center_ideal[0] = heart_center[0];
+        count_avg++;
       }
-      else if (x_cord > 270)
+      else if (count_avg <= 5)
       {
-        array.data.push_back(-1);  // left_side
-        array.data.push_back(-1);
-      }
-      else if (y_cord > 200)
-      {
-        array.data.push_back(-3);  // bottom
-        array.data.push_back(-3);
-      }
-      else if (y_cord < -200)
-      {
-        array.data.push_back(-4);  // right_side
-        array.data.push_back(-4);
+        side[count_avg] = radius[0];
+        center_ideal[count_avg] = center[0];
+        count_avg++;
       }
       else
       {
-        array.data.push_back(x_cord_heart); // x and y coordinate of the center of the heart
-        array.data.push_back(y_cord_heart);
+        count_avg = 0;
+      }
+
+      // cv::Mat circles = frame;
+      // circle(circles, center_ideal[0], r[0], cv::Scalar(0, 250, 0), 1, 8, 0);  // minenclosing circle
+      // circle(circles, center_ideal[0], 4, cv::Scalar(0, 250, 0), -1, 8, 0);    // center is made on the screen
+      // circle(circles, pt, 4, cv::Scalar(150, 150, 150), -1, 8, 0);             // center of screen
+
+      int net_x_cord = 320 - center_ideal[0].x + radius[0]; // put the sides in place of radius
+      int net_y_cord = -240 + center_ideal[0].y + radius[0];
+      if (net_x_cord < -310)
+      {
+        array.data.push_back(-2);  // top
+        array.data.push_back(-2);
+        array.data.push_back(-2);
+        array.data.push_back(-2);
+        pub.publish(array);
+      }
+      else if (net_x_cord > 310)
+      {
+        array.data.push_back(-1);  // left_side
+        array.data.push_back(-1);
+        array.data.push_back(-1);
+        array.data.push_back(-1);
+        pub.publish(array);
+        ros::spinOnce();
+      }
+      else if (net_y_cord > 230)
+      {
+        array.data.push_back(-3);  // bottom
+        array.data.push_back(-3);
+        array.data.push_back(-3);
+        array.data.push_back(-3);
+        pub.publish(array);
+      }
+      else if (net_y_cord < -230)
+      {
+        array.data.push_back(-4);  // right_side
+        array.data.push_back(-4);
+        array.data.push_back(-4);
+        array.data.push_back(-4);
+        pub.publish(array);
+      }
+      else
+      {
+        float distance;
+        distance = pow(radius[0] / 7526.5, -.92678);  // function found using experiment
+        array.data.push_back(r[0]);                   // publish radius
+        array.data.push_back((320 - center_ideal[0].x));
+        array.data.push_back(-(240 - center_ideal[0].y));
+        array.data.push_back(distance);
+        pub.publish(array);
       }
 
       pub.publish(array);
