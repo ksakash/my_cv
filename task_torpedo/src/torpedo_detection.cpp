@@ -128,7 +128,10 @@ int main(int argc, char *argv[])
 
   image_transport::ImageTransport it(n);
   image_transport::Subscriber sub1 = it.subscribe("/varun/sensors/front_camera/image_raw", 1, imageCallback);
-
+  image_transport::Publisher pub = it.advertise("/varun/sensors/first_camera/image_raw", 1);
+  image_transport::Publisher pub1 = it.advertise("/varun/sensors/second_camera/image_raw", 1);
+  image_transport::Publisher pub2 = it.advertise("/varun/sensors/third_camera/image_raw", 1);
+  
   dynamic_reconfigure::Server<task_torpedo::torpedoConfig> server;
   dynamic_reconfigure::Server<task_torpedo::torpedoConfig>::CallbackType f;
   f = boost::bind(&callback, _1, _2);
@@ -414,6 +417,15 @@ int main(int argc, char *argv[])
         count_avg = 0;
       }
 
+      sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", frame).toImageMsg();
+      sensor_msgs::ImagePtr msg1 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", frame).toImageMsg();
+      sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "mono8", frame).toImageMsg();
+
+      pub.publish(msg);
+      pub1.publish(msg1);
+      pub2.publish(msg2);
+      
+      
       // cv::Mat circles = frame;
       // circle(circles, center_ideal[0], r[0], cv::Scalar(0, 250, 0), 1, 8, 0);  // minenclosing circle
       // circle(circles, center_ideal[0], 4, cv::Scalar(0, 250, 0), -1, 8, 0);    // center is made on the screen
