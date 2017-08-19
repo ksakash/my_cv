@@ -284,17 +284,25 @@ int main(int argc, char *argv[])
       std::vector<cv::Vec4i> hierarchy;
       cv::Scalar color(255, 255, 255);
 
-      std::vector<cv::Rect> boundRect(1);
+      std::vector<cv::RotatedRect> boundRect(1);
 
-      boundRect[0] = boundingRect(cv::Mat(contours[largest_contour_index]));
+      boundRect[0] = MinAreaRect(cv::Mat(contours[largest_contour_index]));
+      Point2f rect_points[4];
+      boundRect[0].points(rect_points);
 
-      rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
+      // rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
 
+      for( int j = 0; j < 4; j++ ) // drawing the largest rectangle obtained 
+          line( frame_mat, rect_points0[j], rect_points0[(j+1)%4], color, 1, 8 );
+    
       // cv::Point center;
-      center[0].x = ((boundRect[0].br()).x + (boundRect[0].tl()).x) / 2;
-      center[0].y = ((boundRect[0].tl()).y + (boundRect[0].br()).y) / 2;
-      int side_x = (boundRect.br()).x - (boundRect.tl()).x;
-      int side_y = -((boundRect.tl()).y - (boundRect.br()).y);
+      // center[0].x = ((boundRect[0].br()).x + (boundRect[0].tl()).x) / 2;
+      // center[0].y = ((boundRect[0].tl()).y + (boundRect[0].br()).y) / 2;
+      
+      center[0] = (rect_points[0] + rect_points[1] + rect_points[2] + rect_points[3]) / 4;
+
+      // int side_x = (boundRect.br()).x - (boundRect.tl()).x;
+      // int side_y = -((boundRect.tl()).y - (boundRect.br()).y);
 
 
       drawContours(Drawing, contours, largest_contour_index, color, 2, 8, hierarchy);
