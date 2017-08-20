@@ -273,11 +273,11 @@ int main(int argc, char *argv[])
         }
       }
       // Convex HULL
-      std::vector<std::vector<cv::Point> > hull(contours.size());
-      convexHull(cv::Mat(contours[largest_contour_index]), hull[largest_contour_index], false);
+      // std::vector<std::vector<cv::Point> > hull(contours.size());
+      // convexHull(cv::Mat(contours[largest_contour_index]), hull[largest_contour_index], false);
 
       std::vector<cv::Point2f> center(1);
-      cv::minEnclosingCircle(contours[largest_contour_index], center[0], radius[0]);
+      // cv::minEnclosingCircle(contours[largest_contour_index], center[0], radius[0]);
       
 
       cv::Mat Drawing(thresholded_Mat.rows, thresholded_Mat.cols, CV_8UC1, cv::Scalar::all(0));
@@ -313,7 +313,7 @@ int main(int argc, char *argv[])
       screen_center.y = 240;
 
       circle(frame_mat, center[0], 5, cv::Scalar(0, 250, 0), -1, 8, 1);
-      rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
+      // rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
       circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
 
       cv::imshow("MarkerDetection:Contours", Drawing);
@@ -382,14 +382,14 @@ int main(int argc, char *argv[])
         // array.data.push_back(-4);
         pub.publish(array);
       }
-      else if (side_y > 110 || side_x > 110) // put the side of the square or rectangle which is obtained from the conours
-      {
-        array.data.push_back(-5);
-        array.data.push_back(-5);
+      // else if (side_y > 110 || side_x > 110) // put the side of the square or rectangle which is obtained from the conours
+      // {
+      //   array.data.push_back(-5);
+      //   array.data.push_back(-5);
         // array.data.push_back(-5);
         // array.data.push_back(-5);
-        pub.publish(array);
-      }
+      //   pub.publish(array);
+      // }
       else
       {
         // float distance;
@@ -397,7 +397,7 @@ int main(int argc, char *argv[])
         // array.data.push_back(r[0]);                   // publish radius
         array.data.push_back((320 - center_ideal[0].x));
         array.data.push_back(-(240 - center_ideal[0].y));
-        array.data.push_back(distance);
+        // array.data.push_back(distance);
         pub.publish(array);
       }
 
