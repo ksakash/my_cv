@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 {
   int height, width, step, channels;  // parameters of the image we are working on
   // std::string Video_Name = "Random_Video";
-  // if (argc >= 2)
+  // if (argc >= 2) 
   //  flag = true;
   // if (argc == 3)
   // {
