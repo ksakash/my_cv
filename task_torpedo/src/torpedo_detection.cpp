@@ -127,19 +127,20 @@ int main(int argc, char *argv[])
   ros::Rate loop_rate(10);
 
   image_transport::ImageTransport it(n);
+  // cv::Mat frame = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);
   image_transport::Subscriber sub1 = it.subscribe("/varun/sensors/front_camera/image_raw", 1, imageCallback);
-  image_transport::Publisher pub = it.advertise("/varun/sensors/first_camera/image_raw", 1);
-  image_transport::Publisher pub1 = it.advertise("/varun/sensors/second_camera/image_raw", 1);
-  image_transport::Publisher pub2 = it.advertise("/varun/sensors/third_camera/image_raw", 1);
+  image_transport::Publisher pub1 = it.advertise("/varun/sensors/first_camera/image_raw", 1);
+  image_transport::Publisher pub2 = it.advertise("/varun/sensors/second_camera/image_raw", 1);
+  image_transport::Publisher pub3 = it.advertise("/varun/sensors/third_camera/image_raw", 1);
   
   dynamic_reconfigure::Server<task_torpedo::torpedoConfig> server;
   dynamic_reconfigure::Server<task_torpedo::torpedoConfig>::CallbackType f;
   f = boost::bind(&callback, _1, _2);
   server.setCallback(f);
 
-  cvNamedWindow("TorpedoDetection:Original", CV_WINDOW_NORMAL);
-  cvNamedWindow("TorpedoDetection:AfterEnhancing", CV_WINDOW_NORMAL);
-  cvNamedWindow("TorpedoDetection:AfterThresholding", CV_WINDOW_NORMAL);
+  // cvNamedWindow("TorpedoDetection:Original", CV_WINDOW_NORMAL);
+  // cvNamedWindow("TorpedoDetection:AfterEnhancing", CV_WINDOW_NORMAL);
+  // cvNamedWindow("TorpedoDetection:AfterThresholding", CV_WINDOW_NORMAL);
   // cvNamedWindow("TorpedoDetection:AfterHistogramEqualization", CV_WINDOW_NORMAL);
   // cvNamedWindow("TorpedoDetection:AfterMorphology",CV_WINDOW_NORMAL);
 
@@ -149,15 +150,26 @@ int main(int argc, char *argv[])
   float side[5];
 
   for(int i = 0; i < 5; i++){
-    sides[i] = 0;
+    side[i] = 0;
+  }
+
+  float r[5];
+
+  for(int i = 0; i < 5; i++){
+    r[i] = 0;
   }
 
   // Initialize different images that are going to be used in the program
-  cv::Mat cv::Mat lab_image, balanced_image1, dstx, thresholded, image_clahe, dst;
+  cv::Mat lab_image, balanced_image1, dstx, thresholded, image_clahe, dst;
   std::vector<cv::Mat> lab_planes(3);
   // image converted to HSV plane
   // asking for the minimum distance where bwe fire torpedo
 
+  // cv::Scalar hsv_min = cv::Scalar(t1min, t2min, t3min, 0);
+  // cv::Scalar hsv_max = cv::Scalar(t1max, t2max, t3max, 0);
+  cv::Scalar hsv_min = cv::Scalar(0, 0, 150, 0);
+  cv::Scalar hsv_max = cv::Scalar(100, 260, 260, 0);
+  
   while (ros::ok())
   {
     std_msgs::Float64MultiArray array;
@@ -217,14 +229,17 @@ int main(int argc, char *argv[])
     cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
     cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)));
     cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)));
+    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)));
+    cv::dilate(thresholded, thresholded, getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)));
 
-    cv::imshow("TorpedoDetection:AfterEnhancing", balanced_image1);
-    cv::imshow("TorpedoDetection:AfterThresholding", thresholded);
+
+    // cv::imshow("TorpedoDetection:AfterEnhancing", balanced_image1);
+    // cv::imshow("TorpedoDetection:AfterThresholding", thresholded);
 
     if ((cvWaitKey(10) & 255) == 27)
       break;
 
-    if (!IP)
+    if (1)
     {
       // find contours
       std::vector<std::vector<cv::Point> > contours;
@@ -288,17 +303,18 @@ int main(int argc, char *argv[])
 
       second_largest_contour_index = largest_contour_index;
 
-      for (int i = contours.size()-1; i >= 0; i--)
+      for (int i = 0; i < contours.size(); i++)
       {
         double a = contourArea(contours[i], false);
-        if (a <= 0.75*largest_area)
+        if ((a > second_largest_area) && (a != largest_area))
         {
           second_largest_area = a;
           second_largest_contour_index = i;
-          break;
+          
         }
       }
       // Convex HULL
+      
       std::vector<std::vector<cv::Point> > hull(contours.size());
       convexHull(cv::Mat(contours[largest_contour_index]), hull[largest_contour_index], false);
 
@@ -307,14 +323,16 @@ int main(int argc, char *argv[])
       cv::Scalar color(255, 255, 255);
 
       std::vector<cv::RotatedRect> boundRect(2);
-      Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+      // cv::Scalar color1 = cv::Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
       
+      // for(int i = 0; i < contours.size(); i++){
+      //   drawContours(Drawing, contours, i, color, 2, 8, hierarchy);
+      // }
+      boundRect[0] = cv::minAreaRect(cv::Mat(contours[largest_contour_index]));
+      boundRect[1] = cv::minAreaRect(cv::Mat(contours[second_largest_contour_index])); // finding a min fitting rectangle around the heart shape
 
-      boundRect[0] = MinAreaRect(cv::Mat(contours[largest_contour_index]));
-      boundRect[1] = MinAreaRect(cv::Mat(contours[second_largest_contour_index])); // finding a min fitting rectangle around the heart shape
-
-      Point2f rect_points0[4];
-      Point2f rect_points1[4];
+      cv::Point2f rect_points0[4];
+      cv::Point2f rect_points1[4];
 
       boundRect[0].points(rect_points0); // get the points of the two rectangles formed
       boundRect[1].points(rect_points1);
@@ -324,16 +342,17 @@ int main(int argc, char *argv[])
       // rectangle(Drawing, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0); // drawing a rectangle in the image
       // rectangle(Drawing, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0); // drawing a rectangle in the image 
 
-      cv::Point2f center;
-      center.x = (rect_points0[0].x + rect_points0[1].x + rect_points0[2].x + rect_points0[3].x) / 4; // center of the rectangle of the largest contour 
-      center.y = (rect_points0[0].y + rect_points0[1].y + rect_points0[2].y + rect_points0[3].y) / 4;
+      cv::Point2f center, center1, center2;
+      center1 = (rect_points0[0] + rect_points0[1]) / 2; // center of the rectangle of the largest contour 
+      center2 = (rect_points0[2] + rect_points0[3]) / 2;
+      center = (center1 + center2) / 2;
 
-      float sides0[4]; // length of the sides of the rectangle formed of the largest contour 
+      std::vector<float> sides0(4); // length of the sides of the rectangle formed of the largest contour 
 
       for(int i = 0; i < 4; i++){
 
-        float distance = (rect_points0[i].x - rect_points0[(i+1)%4])*(rect_points0[i].x - rect_points0[(i+1)%4]) + (rect_points0[i].y - rect_points0[(i+1)%4])*(rect_points0[i].y - rect_points0[(i+1)%4].y);
-        sides0[i] = pow(disatnce,0.5);
+        int distance = (rect_points0[i].x - rect_points0[(i+1)%4].x)*(rect_points0[i].x - rect_points0[(i+1)%4].x) + (rect_points0[i].y - rect_points0[(i+1)%4].y)*(rect_points0[i].y - rect_points0[(i+1)%4].y);
+        sides0[i] = pow(distance,0.5);
 
       }
 
@@ -343,19 +362,19 @@ int main(int argc, char *argv[])
       drawContours(Drawing, contours, largest_contour_index, color, 2, 8, hierarchy);
 
       cv::Point2f heart_center; // center of the second largest rectangle
-      heart_center.x = (rect_points1[0].x + rect_points1[1].x + rect_points1[2].x + rect_points1[3].x) / 4;
-      heart_center.y = (rect_points1[0].x + rect_points1[1].x + rect_points1[2].x + rect_points1[3].x) / 4
+      // heart_center = ((rect_points0[0]+rect_points0[1])/2 + (rect_points0[2]+rect_points0[3])/2)/2;
+
       // int heart_side_x = (boundRect[1].br()).x - (boundRect[1].tl()).x; // change the sides
       // int heart_side_y = -((boundRect[1].tl()).y - (boundRect[1].br()).y);
       drawContours(Drawing, contours, second_largest_contour_index, color, 2, 8, hierarchy);
 
       cv::Mat frame_mat = frame;
-      cv::Point2f screen_center;
+      cv::Point2f screen_center, half_center;
       screen_center.x = 320;  // size of my screen
       screen_center.y = 240;
 
-      circle(frame_mat, center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
-      circle(frame_mat, heart_center, 5, cv::Scalar(0, 250, 0), -1, 8, 1);
+      circle(frame_mat, center, 5, cv::Scalar(0, 250, 0), -1, 8, 0);
+      // circle(frame_mat, heart_center1, 5, cv::Scalar(250, 0, 0), -1, 8, 1);
 
       for( int j = 0; j < 4; j++ ) // drawing the largest rectangle obtained 
           line( frame_mat, rect_points0[j], rect_points0[(j+1)%4], color, 1, 8 );
@@ -363,23 +382,30 @@ int main(int argc, char *argv[])
       for( int j = 0; j < 4; j++ ) // drawing the second largest rectangle obtained 
           line( frame_mat, rect_points1[j], rect_points1[(j+1)%4], color, 1, 8 );
       
-      float sides1[4]; // contains the side of the rectangle around the torpedo
+      std::vector<float> sides1(4); // contains the side of the rectangle around the torpedo
 
       for(int i = 0; i < 4; i++){
 
-        float distance = (rect_points1[i].x - rect_points1[(i+1)%4])*(rect_points1[i].x - rect_points1[(i+1)%4]) + (rect_points1[i].y - rect_points1[(i+1)%4])*(rect_points1[i].y - rect_points1[(i+1)%4].y);
-        sides1[i] = pow(disatnce,0.5);
+        int distance = (rect_points1[i].x - rect_points1[(i+1)%4].x)*(rect_points1[i].x - rect_points1[(i+1)%4].x) + (rect_points1[i].y - rect_points1[(i+1)%4].y)*(rect_points1[i].y - rect_points1[(i+1)%4].y);
+        sides1[i] = pow(distance,0.5);
 
       }
 
-      float radius[1];
+      std::vector<float> radius(1);
 
-      radius[0] = (sides0[0] + sides0[1] + sides0[2] + sides0[3] + sides1[0] + sides1[1] + sides1[2] + sides1[3]) / 8 // average of all the sides of the rectangles to get a approx. radius to use
+      radius[0] = (sides0[0] + sides0[1] + sides0[2] + sides0[3] + sides1[0] + sides1[1] + sides1[2] + sides1[3]) / 8; // average of all the sides of the rectangles to get a approx. radius to use
     
       // rectangle(frame_mat, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0);
       // rectangle(frame_mat, boundRect[1].tl(), boundRect[1].br(), color, 2, 8, 0);
-      circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);  // center of screen
+      cv::Point2f point111 = (rect_points1[0] + rect_points1[1])/2;
+      cv::Point2f point112 = (rect_points1[2] + rect_points1[3])/2;
 
+      heart_center = (point112 + point111)/2;
+      circle(frame_mat, screen_center, 4, cv::Scalar(150, 150, 150), -1, 8, 0);
+      circle(frame_mat, heart_center, 4, cv::Scalar(0, 150, 150), -1, 8, 0);  // center of screen
+      
+      // circle(frame_mat, (rect_points0[0]+rect_points0[1] + rect_points0[2]+rect_points0[3])/4, 4, cv::Scalar(0, 250, 0), -1, 8, 0);  // center of screen
+      
       int x_cord_heart = -(heart_center.x - 320);
       int y_cord_heart = -240 + heart_center.y;
 
@@ -388,8 +414,8 @@ int main(int argc, char *argv[])
 
       cv::Point2f center_avg;
 
-      center_avg[0].x = (center_ideal[0].x + center_ideal[1].x + center_ideal[2].x + center_ideal[3].x + center_ideal[4].x) / 5;
-      center_avg[0].y = (center_ideal[0].y + center_ideal[1].y + center_ideal[2].y + center_ideal[3].y + center_ideal[4].y) / 5;
+      center_avg.x = (center_ideal[0].x + center_ideal[1].x + center_ideal[2].x + center_ideal[3].x + center_ideal[4].x) / 5;
+      center_avg.y = (center_ideal[0].y + center_ideal[1].y + center_ideal[2].y + center_ideal[3].y + center_ideal[4].y) / 5;
       
       float side_avg = (side[0] + side[1] + side[2] + side[3] + side[4]) / 5;
       if ((radius[0] < (side_avg + 10)) && (count_avg >= 5))
@@ -403,13 +429,13 @@ int main(int argc, char *argv[])
         center_ideal[3] = center_ideal[2];
         center_ideal[2] = center_ideal[1];
         center_ideal[1] = center_ideal[0];
-        center_ideal[0] = heart_center[0];
+        center_ideal[0] = heart_center;
         count_avg++;
       }
       else if (count_avg <= 5)
       {
         side[count_avg] = radius[0];
-        center_ideal[count_avg] = center[0];
+        center_ideal[count_avg] = center;
         count_avg++;
       }
       else
@@ -417,13 +443,13 @@ int main(int argc, char *argv[])
         count_avg = 0;
       }
 
-      sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", frame).toImageMsg();
-      sensor_msgs::ImagePtr msg1 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", frame).toImageMsg();
-      sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "mono8", frame).toImageMsg();
+      sensor_msgs::ImagePtr msg1 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", frame_mat).toImageMsg();
+      sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", balanced_image1).toImageMsg();
+      sensor_msgs::ImagePtr msg3 = cv_bridge::CvImage(std_msgs::Header(), "mono8", thresholded).toImageMsg();
 
-      pub.publish(msg);
       pub1.publish(msg1);
       pub2.publish(msg2);
+      pub3.publish(msg3);
       
       
       // cv::Mat circles = frame;
@@ -431,8 +457,8 @@ int main(int argc, char *argv[])
       // circle(circles, center_ideal[0], 4, cv::Scalar(0, 250, 0), -1, 8, 0);    // center is made on the screen
       // circle(circles, pt, 4, cv::Scalar(150, 150, 150), -1, 8, 0);             // center of screen
 
-      int net_x_cord = 320 - center_ideal[0].x + radius[0]; // put the sides in place of radius
-      int net_y_cord = -240 + center_ideal[0].y + radius[0];
+      int net_x_cord = 320 - center_ideal[0].x; // put the sides in place of radius
+      int net_y_cord = -240 + center_ideal[0].y;
       if (net_x_cord < -310)
       {
         array.data.push_back(-2);  // top
@@ -470,7 +496,7 @@ int main(int argc, char *argv[])
       {
         float distance;
         distance = pow(radius[0] / 7526.5, -.92678);  // function found using experiment
-        array.data.push_back(r[0]);                   // publish radius
+        array.data.push_back(side[0]);                   // publish radius
         array.data.push_back((320 - center_ideal[0].x));
         array.data.push_back(-(240 - center_ideal[0].y));
         array.data.push_back(distance);
