@@ -298,9 +298,11 @@ int main(int argc, char *argv[])
       // cv::Point center;
       // center[0].x = ((boundRect[0].br()).x + (boundRect[0].tl()).x) / 2;
       // center[0].y = ((boundRect[0].tl()).y + (boundRect[0].br()).y) / 2;
-      
-      center[0] = (rect_points[0] + rect_points[1] + rect_points[2] + rect_points[3]) / 4;
+      cv::Point2f point1, point2;
+      point1 = (rect_points[0] + rect_points[1]) / 2;
+      point2 = (rect_points[2] + rect_points[3]) / 2;
 
+      center[0] = (point2 + point1) / 2;
       // int side_x = (boundRect.br()).x - (boundRect.tl()).x;
       // int side_y = -((boundRect.tl()).y - (boundRect.br()).y);
 
