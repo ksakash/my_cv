@@ -1,4 +1,4 @@
-// Copyright 2016 AUV-IITKs
+// Copyright 2016 AUV-IITK
 #include <cv.h>
 #include <highgui.h>
 #include <ros/ros.h>
@@ -19,35 +19,95 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sstream>
 #include <string>
+#include "pre_processing.h"
 
-int flag =0; // 0 for red, 1 for green, 2 for blue
-std::vector<cv::Mat> buoys(3); // for containing all the thresholded images of buoys separately
+#define SHELLSCRIPT_DUMP "\
+#/bin/bash \n\
+echo -e \"parameters dumped!!\" \n\
+rosparam dump ~/catkin_ws/src/auv/task_handler_layer/task_buoy/launch/dump.yaml \
+"
+#define SHELLSCRIPT_LOAD "\
+#/bin/bash \n\
+echo -e \"parameters loaded!!\" \n\
+rosparam load ~/catkin_ws/src/auv/task_handler_layer/task_buoy/launch/dump.yaml \
+"
 
 bool IP = true;
-bool flag = false;
 bool video = false;
-int t1min, t1max, t2min, t2max, t3min, t3max;  // Default Params
-int r1min, r1max, r2min, r2max, r3min, r3max;
-int g1min, g1max, g2min, g2max, g3min, g3max;
-int b1min, b1max, b2min, b2max, b3min, b3max;
+bool save;
+bool done;
+bool threshold;
+int flag;
+int count = 0;
+int BGR[3][2];  // rgb values for color filtering
 
+int red_buoy[3][2], green_buoy[3][2], blue_buoy[3][2]; // rows for colors and colors for max and min ; 0, 1, 2 for blue, green and red ; 0 for min and 1 max
 cv::Mat frame;
 cv::Mat newframe;
-// cv::Mat dst_array;
 cv::Mat dst;
 
-int count = 0, count_avg = 0, x = -1;
+int count_avg = 0;
 
 void callback(task_buoy::buoyConfig &config, uint32_t level)
 {
-  t1min = config.t1min_param;
-  t1max = config.t1max_param;
-  t2min = config.t2min_param;
-  t2max = config.t2max_param;
-  t3min = config.t3min_param;
-  t3max = config.t3max_param;
   flag = config.flag_param;
-  ROS_INFO("Buoy_Reconfigure Request:New params : %d %d %d %d %d %d %d", t1min, t1max, t2min, t2max, t3min, t3max, flag);
+
+  if (count > 0)
+  {
+    if (flag == 0){
+      config.t1min_param = blue_buoy[0][0];
+      config.t1max_param = blue_buoy[0][1];
+      config.t2min_param = blue_buoy[1][0];
+      config.t2max_param = blue_buoy[1][1];
+      config.t3min_param = blue_buoy[2][0];
+      config.t3max_param = blue_buoy[2][1];
+    }
+
+    else if (flag == 1){
+      config.t1min_param = green_buoy[0][0];
+      config.t1max_param = green_buoy[0][1];
+      config.t2min_param = green_buoy[1][0];
+      config.t2max_param = green_buoy[1][1];
+      config.t3min_param = green_buoy[2][0];
+      config.t3max_param = green_buoy[2][1];
+    }
+
+    else if (flag == 2){
+      config.t1min_param = red_buoy[0][0];
+      config.t1max_param = red_buoy[0][1];
+      config.t2min_param = red_buoy[1][0];
+      config.t2max_param = red_buoy[1][1];
+      config.t3min_param = red_buoy[2][0];
+      config.t3max_param = red_buoy[2][1];
+    }
+  }
+
+  /*BGR[0][0] = config.t1min_param;
+  BGR[0][1] = config.t1max_param;
+  BGR[1][0] = config.t2min_param;
+  BGR[1][1] = config.t2max_param;
+  BGR[2][0] = config.t3min_param;
+  BGR[2][1] = config.t3max_param;*/
+
+  //std::cout << "yo" << std::endl;
+
+  pre_processing::threshold_values_update(BGR, config);
+
+  //std::cout << "yo2" << std::endl;
+
+  done = config.done_param;
+  // flag = config.flag_param;
+  threshold = config.threshold_param;
+
+  if (done = true){
+    config.save_param = false;
+  }
+
+  save = config.save_param;
+  config.save_param = false;
+
+
+  ROS_INFO("Buoy_Reconfigure Request:New params : %d %d %d %d %d %d %d %d %d %d", BGR[0][0], BGR[0][1], BGR[1][0], BGR[1][1], BGR[2][0], BGR[2][1], save, flag, done, threshold);
 }
 
 void lineDetectedListener(std_msgs::Bool msg)
@@ -55,18 +115,10 @@ void lineDetectedListener(std_msgs::Bool msg)
   IP = msg.data;
 }
 
-void coloredBuoyListener(std_msgs::int64 msg)
-{
-  flag = msg.data;
-}
-
 void imageCallback(const sensor_msgs::ImageConstPtr &msg)
 {
-  if (x == 32)
-    return;
   try
   {
-    count++;
     newframe = cv_bridge::toCvShare(msg, "bgr8")->image;
     ///////////////////////////// DO NOT REMOVE THIS, IT COULD BE INGERIOUS TO HEALTH /////////////////////
     newframe.copyTo(frame);
@@ -78,7 +130,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr &msg)
   }
 }
 
-void balance_white(cv::Mat mat)
+/*void balance_white(cv::Mat mat)
 {
   double discard_ratio = 0.05;
   int hists[3][256];
@@ -124,7 +176,7 @@ void balance_white(cv::Mat mat)
       }
     }
   }
-}
+}*/
 
 
 int main(int argc, char *argv[])
@@ -134,7 +186,6 @@ int main(int argc, char *argv[])
   ros::NodeHandle n;
   ros::Publisher pub = n.advertise<std_msgs::Float64MultiArray>("/varun/ip/buoy", 1000);
   ros::Subscriber sub = n.subscribe<std_msgs::Bool>("buoy_detection_switch", 1000, &lineDetectedListener);
-  ros::Subscriber sub1 = n.subscribe<std_msgs::int64>("buoy_color_switch", 1000, &coloredBuoyListener); // for knowing which buoy is alreagy hit
   ros::Rate loop_rate(10);
 
   image_transport::ImageTransport it(n);
@@ -143,14 +194,38 @@ int main(int argc, char *argv[])
   image_transport::Publisher pub2 = it.advertise("/second_picture", 1);
   image_transport::Publisher pub3 = it.advertise("/third_picture", 1);
 
+  system(SHELLSCRIPT_LOAD);
+
+  n.getParam("buoy_detection/r1min", red_buoy[0][0]);
+  n.getParam("buoy_detection/r1max", red_buoy[0][1]);
+  n.getParam("buoy_detection/r2min", red_buoy[1][0]);
+  n.getParam("buoy_detection/r2max", red_buoy[1][1]);
+  n.getParam("buoy_detection/r3min", red_buoy[2][0]);
+  n.getParam("buoy_detection/r3max", red_buoy[2][1]);
+
+  n.getParam("buoy_detection/g1max", green_buoy[0][0]);
+  n.getParam("buoy_detection/g1min", green_buoy[0][1]);
+  n.getParam("buoy_detection/g2max", green_buoy[1][0]);
+  n.getParam("buoy_detection/g2min", green_buoy[1][1]);
+  n.getParam("buoy_detection/g3max", green_buoy[2][0]);
+  n.getParam("buoy_detection/g3min", green_buoy[2][1]);
+
+  n.getParam("buoy_detection/b1max", blue_buoy[0][0]);
+  n.getParam("buoy_detection/b1min", blue_buoy[0][1]);
+  n.getParam("buoy_detection/b2max", blue_buoy[1][0]);
+  n.getParam("buoy_detection/b2min", blue_buoy[1][1]);
+  n.getParam("buoy_detection/b3max", blue_buoy[2][0]);
+  n.getParam("buoy_detection/b3min", blue_buoy[2][1]);
+
+  std::cout << "after getParam" << std::endl;
+  std::cout << red_buoy[0][0] << std::endl;
+
   dynamic_reconfigure::Server<task_buoy::buoyConfig> server;
   dynamic_reconfigure::Server<task_buoy::buoyConfig>::CallbackType f;
   f = boost::bind(&callback, _1, _2);
   server.setCallback(f);
 
-  // cvNamedWindow("BuoyDetection:circle", CV_WINDOW_NORMAL);
-  // cvNamedWindow("BuoyDetection:AfterThresholding", CV_WINDOW_NORMAL);
-  // cvNamedWindow("BuoyDetection:AfterEnhancing", CV_WINDOW_NORMAL);
+  std::cout << "after server setCallback" << std::endl;
 
   CvSize size = cvSize(width, height);
   std::vector<cv::Point2f> center_ideal(5);
@@ -160,25 +235,84 @@ int main(int argc, char *argv[])
   for (int m = 0; m++; m < 5)
     r[m] = 0;
 
-  // all the cv::Mat declared outside the loop to increase the speed
-
-
-  cv::Mat lab_image, balanced_image1, dstx, image_clahe, dst, dst1, dst2;
+  cv::Mat lab_image, balanced_image1, dstx, image_clahe, dst, dst1;
   std::vector<cv::Mat> lab_planes(3);
+  std::vector<cv::Mat> buoys(3);
   std::vector<cv::Mat> thresholded(3);
-
   while (ros::ok())
   {
-    // std::cout << t1min << "  "<< t1max <<" "<< t2min << " " << t2max << " " << t3min <<" "<< t3max << std::endl;
-
     std_msgs::Float64MultiArray array;
     loop_rate.sleep();
+    if (! ros::param::has("/buoy_detection/b2min"))
+      std::cout << "exist" << std::endl;
+    if (threshold == true){
+      if (flag == 0)
+      {
+        for (int i = 0; i < 3; i++){
+          for (int j = 0; j < 2; j++){
+            blue_buoy[i][j] = BGR[i][j];
+          }
+        }
+      }
+
+      else if (flag == 1)
+      {
+        for (int i = 0; i < 3; i++){
+          for (int j = 0; j < 2; j++){
+            green_buoy[i][j] = BGR[i][j];
+          }
+        }
+      }
+
+      else if (flag == 2)
+      {
+        for (int i = 0; i < 3; i++){
+          for (int j = 0; j < 2; j++){
+            red_buoy[i][j] = BGR[i][j];
+          }
+        }
+      }
+    }
+
+    if (save == true){
+
+      n.setParam("buoy_detection/r1min", red_buoy[0][0]);
+      n.setParam("buoy_detection/r1max", red_buoy[0][1]);
+      n.setParam("buoy_detection/r2min", red_buoy[1][0]);
+      n.setParam("buoy_detection/r2max", red_buoy[1][1]);
+      n.setParam("buoy_detection/r3min", red_buoy[2][0]);
+      n.setParam("buoy_detection/r3max", red_buoy[2][1]);
+
+      n.setParam("buoy_detection/g1max", green_buoy[0][0]);
+      n.setParam("buoy_detection/g1min", green_buoy[0][1]);
+      n.setParam("buoy_detection/g2max", green_buoy[1][0]);
+      n.setParam("buoy_detection/g2min", green_buoy[1][1]);
+      n.setParam("buoy_detection/g3max", green_buoy[2][0]);
+      n.setParam("buoy_detection/g3min", green_buoy[2][1]);
+
+      n.setParam("buoy_detection/b1max", blue_buoy[0][0]);
+      n.setParam("buoy_detection/b1min", blue_buoy[0][1]);
+      n.setParam("buoy_detection/b2max", blue_buoy[1][0]);
+      n.setParam("buoy_detection/b2min", blue_buoy[1][1]);
+      n.setParam("buoy_detection/b3max", blue_buoy[2][0]);
+      n.setParam("buoy_detection/b3min", blue_buoy[2][1]);
+
+      save = false;
+      std::cout << "save false" << std::endl;
+
+      system(SHELLSCRIPT_DUMP);
+      std::cout << "dumped" << std::endl;
+
+    }
+
     if (frame.empty())
     {
       ROS_INFO("%s: empty frame", ros::this_node::getName().c_str());
       ros::spinOnce();
       continue;
     }
+
+
 
     // get the image data
     height = frame.rows;
@@ -213,7 +347,7 @@ int main(int argc, char *argv[])
     // balance_white(dst2);
 
     image_clahe.copyTo(balanced_image1);
-    balance_white(balanced_image1);
+    dst1 = pre_processing::balance_white(balanced_image1, 0.05);
 
     for (int i=0; i < 2; i++)
     {
@@ -221,57 +355,25 @@ int main(int argc, char *argv[])
       bilateralFilter(dstx, balanced_image1, 6, 8, 8);
     }
 
-    // Filter out colors which are out of range.
-
     for (int i = 0; i < 3; i++)
-    {
-      buoys[i] = balanced_image1; // till here the input will be same irrespective of the color
-    }
+      buoys[i] = dst1;
 
-    // no need to make 18 parameters dynamically configurable, only 6 parameters needed
+    cv::Scalar red_buoy_min = cv::Scalar(red_buoy[0][0], red_buoy[1][0], red_buoy[2][0], 0);
+    cv::Scalar red_buoy_max = cv::Scalar(red_buoy[0][1], red_buoy[1][1], red_buoy[2][1], 0);
 
-    if (flag == 0)
-    {
-      r1min = t1min;
-      r1max = t1max;
-      r2min = t2min;
-      r2max = t2max;
-      r3min = t3min;
-      r3max = t3max;
-    }
+    cv::Scalar blue_buoy_min = cv::Scalar(blue_buoy[0][0], blue_buoy[1][0], blue_buoy[2][0], 0);
+    cv::Scalar blue_buoy_max = cv::Scalar(blue_buoy[0][1], blue_buoy[1][1], blue_buoy[2][1], 0);
 
-    else if (flag == 1)
-    {
-      g1min = t1min;
-      g2min = t2min;
-      g3min = t3min;
-      g1max = t1max;
-      g2max = t2max;
-      g3max = t3max;
-    }
-
-    else if (flag == 2)
-    {
-      b1min = t1min;
-      b1max = t1max;
-      b2min = t2min;
-      b2max = t2max;
-      b3min = t3min;
-      b3max = t3max;
-    }
-    cv::Scalar r_min = cv::Scalar(r1min, r2min, r3min, 0);
-    cv::Scalar r_max = cv::Scalar(r1max, r2max, r3max, 0);
-
-    cv::Scalar b_min = cv::Scalar(b1min, b2min, b3min, 0);
-    cv::Scalar b_max = cv::Scalar(b1max, b2max, b3max, 0);
-
-    cv::Scalar g_min = cv::Scalar(g1min, g2min, g3min, 0);
-    cv::Scalar g_max = cv::Scalar(g1max, g2max, g3max, 0);
+    cv::Scalar green_buoy_min = cv::Scalar(green_buoy[0][0], green_buoy[1][0], green_buoy[2][0], 0);
+    cv::Scalar green_buoy_max = cv::Scalar(green_buoy[0][1], green_buoy[1][1], green_buoy[2][1], 0);
 
     // thresholding all the colors according to their thresholding values
-    cv::inRange(buoys[0], r_min, r_max, thresholded[0]);
-    cv::inRange(bouys[1], g_min, g_max, thresholded[0]);
-    cv::inRange(buoys[2], b_min, b_max, thresholded[0]);
+    cv::inRange(buoys[0], red_buoy_min, red_buoy_max, thresholded[0]);
+    cv::inRange(buoys[1], green_buoy_min, green_buoy_max, thresholded[1]);
+    cv::inRange(buoys[2], blue_buoy_min, blue_buoy_max, thresholded[2]);
+
+
+    // Filter out colors which are out of range.
 
     for (int i = 0; i < 3; i++)
     {
@@ -280,28 +382,22 @@ int main(int argc, char *argv[])
       cv::dilate(thresholded[i], thresholded[i], getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)));
     }
 
-    // merging the result
-
-    cv::addWeighted( thresholded[0], 1, thresholded[1], 1, 0.0, dst1);
-    cv::addWeighted( dst1, 1, thresholded[2], 1, 0.0, dst2);
-
-    // cv::imshow("BuoyDetection:AfterEnhancing", balanced_image1);
-    // cv::imshow("BuoyDetection:AfterThresholding", thresholded);
-
-    if ((cvWaitKey(10) & 255) == 27)
-      break;
+    // if ((cvWaitKey(10) & 255) == 27)
+    //   break;
 
     if (1)
     {
-
-      std::cout << "inside if" << std::endl;
       // find contours
       std::vector<std::vector<cv::Point> > contours;
-      cv::Mat thresholded_Mat = thresholded[flag];
+      cv::Mat thresholded_Mat = thresholded[0];
       findContours(thresholded_Mat, contours, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);  // Find the contours
       double largest_area = 0, largest_contour_index = 0;
+      std::cout << "inside if" << std::endl;
+      sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", balanced_image1).toImageMsg();
+      sensor_msgs::ImagePtr msg3 = cv_bridge::CvImage(std_msgs::Header(), "mono8", thresholded_Mat).toImageMsg();
 
-      // std::cout << contours.size() << std::endl;
+      pub2.publish(msg2);
+      pub3.publish(msg3);
 
       if (contours.empty())
       {
@@ -313,7 +409,6 @@ int main(int argc, char *argv[])
           array.data.push_back(-2);
           array.data.push_back(-2);
           array.data.push_back(-2);
-          array.data.push_back(flag);
           pub.publish(array);
         }
         else if (x_cord > 270)
@@ -322,7 +417,6 @@ int main(int argc, char *argv[])
           array.data.push_back(-1);
           array.data.push_back(-1);
           array.data.push_back(-1);
-          array.data.push_back(flag);
           pub.publish(array);
         }
         else if (y_cord > 200)
@@ -331,7 +425,6 @@ int main(int argc, char *argv[])
           array.data.push_back(-3);
           array.data.push_back(-3);
           array.data.push_back(-3);
-          array.data.push_back(flag);
           pub.publish(array);
         }
         else if (y_cord < -200)
@@ -340,14 +433,13 @@ int main(int argc, char *argv[])
           array.data.push_back(-4);
           array.data.push_back(-4);
           array.data.push_back(-4);
-          array.data.push_back(flag);
           pub.publish(array);
         }
         ros::spinOnce();
         // If ESC key pressed, Key=0x10001B under OpenCV 0.9.7(linux version),
         // remove higher bits using AND operator
-        if ((cvWaitKey(10) & 255) == 27)
-          break;
+        // if ((cvWaitKey(10) & 255) == 27)
+        //   break;
         continue;
       }
       for (int i = 0; i < contours.size(); i++)  // iterate through each contour.
@@ -376,7 +468,7 @@ int main(int argc, char *argv[])
         r[4] = r[3];
         r[3] = r[2];
         r[2] = r[1];
-        r[1] = r[0];array.data.push_back(flag);
+        r[1] = r[0];
         r[0] = radius[0];
         center_ideal[4] = center_ideal[3];
         center_ideal[3] = center_ideal[2];
@@ -392,12 +484,9 @@ int main(int argc, char *argv[])
         count_avg++;
       }
       else
-      {array.data.push_back(flag);
+      {
         count_avg = 0;
       }
-
-      std::cout << "here" << std::endl;
-
 
       cv::Mat circles = frame;
       circle(circles, center_ideal[0], r[0], cv::Scalar(0, 250, 0), 1, 8, 0);  // minenclosing circle
@@ -405,12 +494,7 @@ int main(int argc, char *argv[])
       circle(circles, pt, 4, cv::Scalar(150, 150, 150), -1, 8, 0);             // center of screen
 
       sensor_msgs::ImagePtr msg1 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", circles).toImageMsg();
-      sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", balanced_image1).toImageMsg();
-      sensor_msgs::ImagePtr msg3 = cv_bridge::CvImage(std_msgs::Header(), "mono8", thresholded).toImageMsg();
-
       pub1.publish(msg1);
-      pub2.publish(msg2);
-      pub3.publish(msg3);
 
       int net_x_cord = 320 - center_ideal[0].x + r[0];
       int net_y_cord = -240 + center_ideal[0].y + r[0];
@@ -420,7 +504,6 @@ int main(int argc, char *argv[])
         array.data.push_back(-2);
         array.data.push_back(-2);
         array.data.push_back(-2);
-        array.data.push_back(flag);
         pub.publish(array);
       }
       else if (net_x_cord > 310)
@@ -429,8 +512,8 @@ int main(int argc, char *argv[])
         array.data.push_back(-1);
         array.data.push_back(-1);
         array.data.push_back(-1);
-        array.data.push_back(flag);
         pub.publish(array);
+        ros::spinOnce();
       }
       else if (net_y_cord > 230)
       {
@@ -438,7 +521,6 @@ int main(int argc, char *argv[])
         array.data.push_back(-3);
         array.data.push_back(-3);
         array.data.push_back(-3);
-        array.data.push_back(flag);
         pub.publish(array);
       }
       else if (net_y_cord < -230)
@@ -447,7 +529,6 @@ int main(int argc, char *argv[])
         array.data.push_back(-4);
         array.data.push_back(-4);
         array.data.push_back(-4);
-        array.data.push_back(flag);
         pub.publish(array);
       }
       else if (r[0] > 110)
@@ -456,7 +537,6 @@ int main(int argc, char *argv[])
         array.data.push_back(-5);
         array.data.push_back(-5);
         array.data.push_back(-5);
-        array.data.push_back(flag);
         pub.publish(array);
       }
       else
@@ -467,12 +547,11 @@ int main(int argc, char *argv[])
         array.data.push_back((320 - center_ideal[0].x));
         array.data.push_back(-(240 - center_ideal[0].y));
         array.data.push_back(distance);
-        array.data.push_back(flag);
         pub.publish(array);
       }
       // cv::imshow("BuoyDetection:circle", circles);  // Original stream with detected ball overlay
 
-      if ((cvWaitKey(10) & 255) == 32)
+      /*if ((cvWaitKey(10) & 255) == 32)
       {
         if (x == 32)
           x = -1;
@@ -480,16 +559,16 @@ int main(int argc, char *argv[])
           x = 32;
       }
       if (x == 32)
-        ROS_INFO("%s: PAUSED\n", ros::this_node::getName().c_str());
+        ROS_INFO("%s: PAUSED\n", ros::this_node::getName().c_str());*/
       ros::spinOnce();
       // If ESC key pressed, Key=0x10001B under OpenCV 0.9.7(linux version),
       // remove higher bits using AND operator
-      if ((cvWaitKey(10) & 255) == 27)
-        break;
+      // if ((cvWaitKey(10) & 255) == 27)
+      //   break;
     }
     else
     {
-      if ((cvWaitKey(10) & 255) == 32)
+      /*if ((cvWaitKey(10) & 255) == 32)
       {
         if (x == 32)
           x = -1;
@@ -497,11 +576,10 @@ int main(int argc, char *argv[])
           x = 32;
       }
       if (x == 32)
-        ROS_INFO("%s: PAUSED\n", ros::this_node::getName().c_str());
+        ROS_INFO("%s: PAUSED\n", ros::this_node::getName().c_str());*/
       ros::spinOnce();
     }
   }
   // output_cap.release();
   return 0;
 }
-
