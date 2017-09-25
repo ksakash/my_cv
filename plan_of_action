@@ -1,0 +1,7 @@
+1. torpedo contains a problem od handling two contours so there is a problem that when bot comes near the torpedo then it sees only one contour so code must decide which contour to take for claculating the distance from the torpedo.
+
+2. if bot is near the torpedo only one contour is there.
+
+3. take he average of the largest and the second largest contour and then use the side of the square to calculate the distance. 
+
+4. when the second_largest_area is zero then the side to be taken to calculate the distance will be the largest_area side.
