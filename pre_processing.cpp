@@ -1,24 +1,6 @@
 // Copyright 2017 AUV-IITK
-#include <cv.h>
-#include <highgui.h>
-#include <ros/ros.h>
-#include "std_msgs/String.h"
-#include "std_msgs/Int8.h"
-#include <fstream>
-#include <dynamic_reconfigure/server.h>
+#include "lib.hpp"
 #include <task_buoy/buoyConfig.h>
-#include <vector>
-#include <std_msgs/Bool.h>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/opencv.hpp>
-#include "std_msgs/Float32MultiArray.h"
-#include <opencv/highgui.h>
-#include <image_transport/image_transport.h>
-#include "std_msgs/Float64MultiArray.h"
-#include <cv_bridge/cv_bridge.h>
-#include <sstream>
-#include <string>
 
 namespace pre_processing{
 
@@ -74,7 +56,7 @@ cv::Mat balance_white(cv::Mat src, float parameter){
   return mat;
 }
 
-cv::Mat color_correction(cv::Mat src, float parameter){
+cv::Mat color_correction(cv::Mat src, int parameter){
 
   std::vector<cv::Mat> lab_planes(3);
   cv::Mat dst, lab_image;
@@ -86,7 +68,7 @@ cv::Mat color_correction(cv::Mat src, float parameter){
 
   // apply the CLAHE algorithm to the L channel
   cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
-  clahe->setClipLimit(4);
+  clahe->setClipLimit(parameter);
 
   clahe->apply(lab_planes[0], dst);
 
@@ -101,7 +83,7 @@ cv::Mat color_correction(cv::Mat src, float parameter){
   return image_clahe;
 
 }
-cv::Mat denoise(cv::Mat src, int i){
+void denoise(cv::Mat &src, int i){
 
   cv::Mat dstx;
 
@@ -110,10 +92,9 @@ cv::Mat denoise(cv::Mat src, int i){
     bilateralFilter(dstx, src, 6, 8, 8);
   }
 
-  return src;
 }
 
-std_msgs::Float64MultiArray empty_frame_handler(cv::Point2f center_ideal){
+std_msgs::Float64MultiArray empty_contour_handler(cv::Point2f center_ideal){
 
   std_msgs::Float64MultiArray array;
 
@@ -190,7 +171,7 @@ std_msgs::Float64MultiArray edge_case_handler(cv::Point2f center, int radius){
 
   }
 
-  void get_buoys_params(ros::NodeHandle &nh, int** red_buoy, int** blue_buoy, int** green_buoy)
+  void get_buoys_params(ros::NodeHandle &nh, int red_buoy[][2], int blue_buoy[][2], int green_buoy[][2])
   {
     nh.getParam("buoy_detection/r1min", red_buoy[0][0]);
     nh.getParam("buoy_detection/r1max", red_buoy[0][1]);
@@ -215,7 +196,7 @@ std_msgs::Float64MultiArray edge_case_handler(cv::Point2f center, int radius){
 
   }
 
-  void threshold(int** BGR, int** red_buoy, int** blue_buoy, int** green_buoy, int flag)
+  void threshold(int BGR[][2], int red_buoy[][2], int blue_buoy[][2], int green_buoy[][2], int flag)
   {
     if (flag == 0)
     {
@@ -245,7 +226,7 @@ std_msgs::Float64MultiArray edge_case_handler(cv::Point2f center, int radius){
     }
   }
 
-  void set_buoy_params(ros::NodeHandle n, int** red_buoy, int** blue_buoy, int** green_buoy)
+  void set_buoy_params(ros::NodeHandle n, int red_buoy[][2], int blue_buoy[][2], int green_buoy[][2])
   {
     n.setParam("buoy_detection/r1min", red_buoy[0][0]);
     n.setParam("buoy_detection/r1max", red_buoy[0][1]);
@@ -270,7 +251,7 @@ std_msgs::Float64MultiArray edge_case_handler(cv::Point2f center, int radius){
 
   }
 
-  void update_values(task_buoy::buoyConfig &config, int flag, int** blue_buoy, int** green_buoy, int** red_buoy)
+  void update_values(task_buoy::buoyConfig &config, int flag, int blue_buoy[][2], int green_buoy[][2], int red_buoy[][2])
   {
 
     if (flag == 0){

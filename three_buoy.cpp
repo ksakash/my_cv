@@ -164,9 +164,6 @@ int main(int argc, char *argv[])
 
     pre_processing::denoise(dst1, 2);
 
-    for (int i = 0; i < 3; i++)
-      buoys[i] = dst1;
-
     cv::Scalar red_buoy_min = cv::Scalar(red_buoy[0][0], red_buoy[1][0], red_buoy[2][0], 0);
     cv::Scalar red_buoy_max = cv::Scalar(red_buoy[0][1], red_buoy[1][1], red_buoy[2][1], 0);
 
@@ -177,9 +174,9 @@ int main(int argc, char *argv[])
     cv::Scalar green_buoy_max = cv::Scalar(green_buoy[0][1], green_buoy[1][1], green_buoy[2][1], 0);
 
     // thresholding all the colors according to their thresholding values
-    cv::inRange(buoys[0], red_buoy_min, red_buoy_max, thresholded[0]);
-    cv::inRange(buoys[1], green_buoy_min, green_buoy_max, thresholded[1]);
-    cv::inRange(buoys[2], blue_buoy_min, blue_buoy_max, thresholded[2]);
+    cv::inRange(dst1, red_buoy_min, red_buoy_max, thresholded[0]);
+    cv::inRange(dst1, green_buoy_min, green_buoy_max, thresholded[1]);
+    cv::inRange(dst1, blue_buoy_min, blue_buoy_max, thresholded[2]);
 
     // Filter out colors which are out of range.
 
